@@ -2029,3 +2029,24 @@ bool ChatHandler::HandleBattleBotShowAllPathsCommand(char* args)
     PSendSysMessage("Showing %u paths for battleground.", id);
     return true;
 }
+
+bool ChatHandler::HandleWorldBotAddCommand(char * args){
+    Player* pPlayer = m_session->GetPlayer();
+    if (!pPlayer)
+        return false;
+
+    /*
+    if (!args){
+        SendSysMessage("Incorrect syntax. Expected role: \'tank\', \'dps\', \'rdps\', \'healer\'.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+    */
+
+    return true;
+}
+
+bool ChatHandler::HandleWorldBotRemoveCommand(char * args){
+
+    return true;
+}

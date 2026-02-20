@@ -132,6 +132,13 @@ ChatCommand * ChatHandler::getCommandTable()
         { "showallpaths", SEC_ADMINISTRATOR,    false, &ChatHandler::HandleBattleBotShowAllPathsCommand, "", nullptr },
         { nullptr,        0,                    false, nullptr,                                          "", nullptr },
     };
+    
+    static ChatCommand worldBotCommandTable[] =
+    {
+        { "add",          SEC_ADMINISTRATOR,    false, &ChatHandler::HandleWorldBotAddCommand,           "", nullptr },
+        { "remove",       SEC_ADMINISTRATOR,    false, &ChatHandler::HandleWorldBotRemoveCommand,        "", nullptr },
+        { nullptr,        0,                    false, nullptr,                                          "", nullptr },
+    };
 
     static ChatCommand accountSetCommandTable[] =
     {

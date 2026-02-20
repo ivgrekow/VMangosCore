@@ -7,5 +7,8 @@ void WorldBotAI::UpdateAI(uint32 diff){
     else
         return;
 
+    if (!me->IsInWorld() || me->IsBeingTeleported())
+        return;
+
     
 }
