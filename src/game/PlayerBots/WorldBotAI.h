@@ -11,9 +11,9 @@ class WorldBotAI : public PlayerBotAI
 {
 public:
     WorldBotAI(Player* pLeader,
-        uint32 race, 
-        uint32 _class, 
-        uint32 level, 
+        uint8 race, 
+        uint8 _class, 
+        uint8 level, 
         uint32 mapId, 
         uint32 instanceId,
         float x, float y, float z, float o) : PlayerBotAI(nullptr), m_leader{pLeader}, m_race{race}, m_class{_class},
@@ -23,9 +23,12 @@ public:
         }
 
     void UpdateAI(uint32 diff);
+    void PopulateSpellData();
 
 private:
     ShortTimeTracker m_updateTimer;
+    std::unordered_map<std::string /*spell name*/, std::vector<const SpellEntry*> /*ranks*/> m_spellBook;
+
 
     Player* m_leader = nullptr;
     uint8 m_race = 0;

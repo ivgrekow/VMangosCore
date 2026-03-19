@@ -197,6 +197,7 @@ set (game_SRCS
     PlayerBots/PlayerBotAI.cpp
     PlayerBots/PlayerBotMgr.cpp
     PlayerBots/WorldBotAI.cpp
+    PlayerBots/WorldBotSpellData.cpp
     Protocol/Opcodes.cpp
     Protocol/WorldSocket.h
     Protocol/WorldSocket.cpp
