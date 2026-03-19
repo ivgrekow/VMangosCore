@@ -12,11 +12,14 @@
 #include "PlayerBotAI.h"
 #include "PartyBotAI.h"
 #include "BattleBotAI.h"
+#include "WorldBotAI.h"
 #include "BattleBotWaypoints.h"
 #include "BattleGroundMgr.h"
 #include "MapManager.h"
 #include "Language.h"
 #include "Spell.h"
+
+#include <fstream>
 
 INSTANTIATE_SINGLETON_1(PlayerBotMgr);
 
@@ -2035,18 +2038,70 @@ bool ChatHandler::HandleWorldBotAddCommand(char * args){
     if (!pPlayer)
         return false;
 
-    /*
-    if (!args){
-        SendSysMessage("Incorrect syntax. Expected role: \'tank\', \'dps\', \'rdps\', \'healer\'.");
+    uint8 botRace = SelectRandomRaceForClass((uint8)CLASS_WARRIOR, pPlayer->GetTeam());
+    if (!botRace)
+    {
+        SendSysMessage("Unable to select race for bot.");
         SetSentErrorMessage(true);
         return false;
     }
-    */
+
+    float x, y, z;
+    pPlayer->GetNearPoint(pPlayer, x, y, z, 0, 5.0f, frand(0.0f, 6.0f));
+    
+    WorldBotAI* ai = new WorldBotAI(pPlayer, botRace, (uint8)CLASS_WARRIOR, (uint8)1, pPlayer->GetMapId(), pPlayer->GetMap()->GetInstanceId(),
+        x, y, z, pPlayer->GetOrientation());
+    if (sPlayerBotMgr.AddBot(ai))
+        SendSysMessage("New world bot added.");
+    else
+    {
+        delete ai;
+        SendSysMessage("Error spawning world bot.");
+        SetSentErrorMessage(true);
+        return false;
+    }
 
     return true;
 }
 
 bool ChatHandler::HandleWorldBotRemoveCommand(char * args){
+    Player* pTarget = GetSelectedPlayer();
+    if (!pTarget){
+        SendSysMessage(LANG_NO_CHAR_SELECTED);
+        SetSentErrorMessage(true);
+        return false;
+    }
+    
+    if (!pTarget->AI()){
+        SendSysMessage("Selected target has no AI.");
+        SetSentErrorMessage(true);
+        return false;
+    }
 
+    WorldBotAI* pAI = dynamic_cast<WorldBotAI*>(pTarget->AI());
+    if (!pAI){
+        SendSysMessage("Selected target is not a world bot.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    pAI->botEntry->requestRemoval = true;
+
+    return true;
+}
+
+bool ChatHandler::HandleWorldBotRecordPointCommand(char * args){
+    Player* pPlayer = m_session->GetPlayer();
+    if (!pPlayer)
+        return false;
+    
+    std::ofstream file("waypoints.txt", std::ios::app);
+    if (!file.is_open()){
+        SendSysMessage("Failed to open file.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+    file << pPlayer->GetPositionX() << " " << pPlayer->GetPositionY() << " " << pPlayer->GetPositionZ() << std::endl;
+    file.close();
     return true;
 }

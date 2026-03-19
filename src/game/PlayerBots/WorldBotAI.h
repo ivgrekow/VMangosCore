@@ -2,8 +2,11 @@
 #define WORLDBOT_H
 
 #include "PlayerBotAI.h"
+#include "PlayerBotMgr.h"
 #include "SpellEntry.h"
 #include "Player.h"
+#include "WorldPacket.h"
+#include "Opcodes.h"
 
 #define WB_UPDATE_INTERVAL 1000
 
@@ -22,7 +25,9 @@ public:
             m_updateTimer.Reset(2000);
         }
 
+    bool OnSessionLoaded(PlayerBotEntry* entry, WorldSession* sess) final;
     void UpdateAI(uint32 diff);
+    void OnPacketRecieved(WorldPacket const* packet);
     void PopulateSpellData();
 
 private:

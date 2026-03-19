@@ -302,6 +302,7 @@ class ChatHandler
 
         bool HandleWorldBotAddCommand(char * args);
         bool HandleWorldBotRemoveCommand(char * args);
+        bool HandleWorldBotRecordPointCommand(char * args);
 
         // spell_disabled
         bool HandleReloadSpellDisabledCommand(char *args);

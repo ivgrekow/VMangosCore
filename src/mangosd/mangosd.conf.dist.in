@@ -3010,7 +3010,7 @@ AHBot.itemcount = 50
 #
 #    WorldBot.MaxBots
 #        Maximum number of world bots that normal players are allowed to summon.
-         Default: 1
+#        Default: 1
 #
 ###################################################################################################################
 RandomBot.Enable = 0
