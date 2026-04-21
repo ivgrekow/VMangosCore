@@ -24,6 +24,24 @@
 
 #include "Common.h"
 
+struct EnchStoreItem
+{
+    uint32  ench;
+    float   chance;
+
+    EnchStoreItem()
+        : ench(0), chance(0) {}
+
+    EnchStoreItem(uint32 _ench, float _chance)
+        : ench(_ench), chance(_chance) {}
+};
+
+typedef std::vector<EnchStoreItem> EnchStoreList;
+typedef std::unordered_map<uint32, EnchStoreList> EnchantmentStore;
+
+static EnchantmentStore RandomItemEnch;
+
 void LoadRandomEnchantmentsTable();
 uint32 GetItemEnchantMod(uint32 entry);
+EnchStoreList GetEnchStoreListByItemRandomProperty(uint32 randomProperty);
 #endif

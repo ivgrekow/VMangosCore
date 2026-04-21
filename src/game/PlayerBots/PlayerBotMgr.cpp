@@ -20,6 +20,7 @@
 #include "Spell.h"
 
 #include <fstream>
+#include <regex>
 
 INSTANTIATE_SINGLETON_1(PlayerBotMgr);
 
@@ -60,6 +61,8 @@ void PlayerBotMgr::LoadConfig()
     m_confDebug = sConfig.GetBoolDefault("PlayerBot.Debug", false);
     m_confUpdateDiff = sConfig.GetIntDefault("PlayerBot.UpdateMs", 10000);
     m_confBattleBotAutoJoin = sConfig.GetBoolDefault("BattleBot.AutoJoin", false);
+
+    m_worldBotConfig.gearQuality = sConfig.GetFloatDefault("WorldBot.GearQuality", 0.5);
 
     if (!sWorld.getConfig(CONFIG_BOOL_FORCE_LOGOUT_DELAY))
         m_tempBots.clear();
@@ -145,6 +148,33 @@ void PlayerBotMgr::Load()
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr] Between %u and %u bots online", m_confMinRandomBots, m_confMaxRandomBots);
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr] %u now loading", m_stats.loadingCount);
     }
+
+    // 9 - WorldBot talent sequences
+    // warrior tank
+    std::vector<std::pair<uint32, uint32>> talentSequence
+    {
+        {1601, 0}, {1601, 1}, {1601, 2}, {1601, 3}, {1601, 4}, // Shield Specialization
+        {142, 0}, {142, 1}, // Improved Bloodrage
+        {138, 0}, {138, 1}, {138, 2}, // Anticipation
+        {153, 0}, // Last Stand
+        {147, 0}, {147, 1}, {147, 2}, // Improved Revenge 
+        {145, 0}, // Improved Shield Block
+        {143, 0}, {143, 1}, // Improved Taunt
+        {146, 0}, {146, 1}, {146, 2}, // Improved Sunder Armor
+        {152, 0}, // Concussion Blow
+        {145, 1}, {145, 2}, // Improved Shield Block
+        {138, 3}, {138, 4}, // Anticipation
+        {144, 0}, {144, 1}, {144, 2}, {144, 3}, {144, 4}, // Defiance
+        {148, 0}, // Shield Slam
+        {124, 0}, {124, 1}, {124, 2}, // Improved Heroic Strike
+        {130, 0}, {130, 1}, // Deflection
+        {641, 0}, {641, 1}, {641, 2}, {641, 3}, {641, 4}, // Tactical Mastery
+        {137, 0}, // Anger Managment
+        {140, 0}, {140, 1}, {140, 2}, {140, 3}, {140, 4}, // Toughness
+        {130, 2}, {130, 3}, {130, 4}, // Deflection
+        {150, 0} // Improved Shield Wall
+    };
+    m_worldBotTalentSpecs["warrior_tank"] = talentSequence;
 }
 
 void PlayerBotMgr::DeleteAll()
@@ -2046,10 +2076,17 @@ bool ChatHandler::HandleWorldBotAddCommand(char * args){
         return false;
     }
 
+    uint32 botLevel = 1;
+    ExtractUInt32(&args, botLevel);
+    if (botLevel == 0)
+        botLevel = 1;
+    else if (botLevel > 60)
+        botLevel = 60;
+
     float x, y, z;
     pPlayer->GetNearPoint(pPlayer, x, y, z, 0, 5.0f, frand(0.0f, 6.0f));
     
-    WorldBotAI* ai = new WorldBotAI(pPlayer, botRace, (uint8)CLASS_WARRIOR, (uint8)1, pPlayer->GetMapId(), pPlayer->GetMap()->GetInstanceId(),
+    WorldBotAI* ai = new WorldBotAI(pPlayer, botRace, (uint8)CLASS_WARRIOR, (uint8)botLevel, pPlayer->GetMapId(), pPlayer->GetMap()->GetInstanceId(),
         x, y, z, pPlayer->GetOrientation());
     if (sPlayerBotMgr.AddBot(ai))
         SendSysMessage("New world bot added.");
@@ -2104,4 +2141,27 @@ bool ChatHandler::HandleWorldBotRecordPointCommand(char * args){
     file << pPlayer->GetPositionX() << " " << pPlayer->GetPositionY() << " " << pPlayer->GetPositionZ() << std::endl;
     file.close();
     return true;
+}
+
+std::unordered_map<std::string, std::vector<std::pair<uint32, uint32>>> PlayerBotMgr::GetSpecsFilterByRegex(std::string regex){
+    std::unordered_map<std::string, std::vector<std::pair<uint32, uint32>>> specMap;
+
+    std::regex pattern(regex);
+    for (const auto entry: m_worldBotTalentSpecs){
+        if (std::regex_search(entry.first, pattern)){
+            specMap[entry.first] = entry.second;
+        }
+    }
+
+    return specMap;
+}
+
+std::vector<std::pair<uint32, uint32>> PlayerBotMgr::GetSpecByName(std::string properName){
+    std::vector<std::pair<uint32, uint32>> talentSequence;
+    
+    auto it = m_worldBotTalentSpecs.find(properName);
+    if (it != m_worldBotTalentSpecs.end())
+        talentSequence = it->second;
+
+    return talentSequence;
 }

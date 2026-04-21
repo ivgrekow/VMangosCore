@@ -3032,6 +3032,7 @@ BattleBot.AutoEquip = 1
 BattleBot.AutoJoin = 0
 
 WorldBot.MaxBots = 1
+WorldBot.GearQuality = 0.5
 
 ###################################################################################################################
 #    Mail flooding mitigation

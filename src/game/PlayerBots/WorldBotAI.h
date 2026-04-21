@@ -7,8 +7,11 @@
 #include "Player.h"
 #include "WorldPacket.h"
 #include "Opcodes.h"
+#include "ObjectMgr.h"
+#include "ItemEnchantmentMgr.h"
 
 #define WB_UPDATE_INTERVAL 1000
+
 
 class WorldBotAI : public PlayerBotAI
 {
@@ -24,16 +27,21 @@ public:
         {
             m_updateTimer.Reset(2000);
         }
-
-    bool OnSessionLoaded(PlayerBotEntry* entry, WorldSession* sess) final;
-    void UpdateAI(uint32 diff);
-    void OnPacketRecieved(WorldPacket const* packet);
-    void PopulateSpellData();
-
+        
+        bool OnSessionLoaded(PlayerBotEntry* entry, WorldSession* sess) final;
+        void OnPlayerLogin() final;
+        void UpdateAI(uint32 diff);
+        void OnPacketRecieved(WorldPacket const* packet);
+        void PopulateSpellData();
+        void InitTalentsByRandomSpec();
+        void GenerateGear();
+        
 private:
     ShortTimeTracker m_updateTimer;
     std::unordered_map<std::string /*spell name*/, std::vector<const SpellEntry*> /*ranks*/> m_spellBook;
-
+    std::string m_currentSpec;
+    uint32 m_honorRank = 0;
+    bool m_isInitialized = false;
 
     Player* m_leader = nullptr;
     uint8 m_race = 0;
@@ -45,6 +53,9 @@ private:
     float m_y = 0.0f;
     float m_z = 0.0f;
     float m_o = 0.0f;
+
+    bool IsRandomEnchantRelevant(std::string suffx);
+    bool IsItemStatsRelevant(const ItemPrototype* pProto);
 };
 
 
