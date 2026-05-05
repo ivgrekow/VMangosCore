@@ -16,7 +16,8 @@ void WorldBotAI::UpdateAI(uint32 const diff){
         if (m_level)
             me->GiveLevel(m_level);
         InitTalentsByRandomSpec();
-        sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::UpdateAI : Talents are initialized.");
+        PopulateSpellData();
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::UpdateAI : Talents are initialized.");
         me->SetUInt32Value(PLAYER_XP, 0);
         GenerateGear();
         m_isInitialized = true;
@@ -151,13 +152,13 @@ void WorldBotAI::GenerateGear(){
         switch (me->GetClass()){
             case CLASS_WARRIOR:{
                 if (pProto->InventoryType == INVTYPE_HOLDABLE)
-                    continue;
+                continue;
             }
             
             default:
-                break;
+            break;
         }
-
+        
         // uint8 slots[4];
         // pProto->GetAllowedEquipSlots(slots, me->GetClass(), me->CanDualWield());
         // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "Found item id %d, name \"%s\", inventory %d.", pProto->ItemId, pProto->Name1, pProto->InventoryType);
@@ -165,13 +166,6 @@ void WorldBotAI::GenerateGear(){
     }
     // for (int i=0; i < itemsPerSlot[INVTYPE_CHEST].size(); ++i)
     //     sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "\tFound chest armor id %d, name \"%s\".", itemsPerSlot[INVTYPE_CHEST][i]->ItemId, itemsPerSlot[INVTYPE_CHEST][i]->Name1);
-    
-    for (uint32 i=INVTYPE_HEAD; i < INVTYPE_TRINKET; i++) {
-        std::sort(itemsPerSlot[i].begin(), itemsPerSlot[i].end(), [](const ItemPrototype* a, const ItemPrototype* b){
-            return a->ItemLevel < b->ItemLevel;
-        });
-        sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : itemsPerSlot[%d].size = %d", i, itemsPerSlot[i].size());
-    }
     
     std::vector<uint32> invSlots {
         INVTYPE_HEAD,
@@ -186,131 +180,153 @@ void WorldBotAI::GenerateGear(){
         INVTYPE_FINGER,
         INVTYPE_CLOAK
     };
-    bool isFirstRing = true;
-    for (uint32 invSlot: invSlots) {
 
-        bool isGearSelected = false;
-        std::vector<uint32> enchIds;
-
-        while (itemsPerSlot[invSlot].size() > 0 && !isGearSelected){
-            float gearQuality = sPlayerBotMgr.GetWorldBotGearQuality();
-            
-            // gearQuality = frand(gearQuality, 1.0f);
-            // uint32 indexOffset = static_cast<uint32>( std::floor(frand(gearQuality, 1.0f) * itemsPerSlot[invSlot].size()) );
-            std::vector<uint32> whiteIndexes;
-            std::vector<uint32> greenIndexes;
-            std::vector<uint32> blueIndexes;
-            std::vector<uint32> purpleIndexes;
-            for (uint32 j = 0; j < itemsPerSlot[invSlot].size(); ++j){
-                if (itemsPerSlot[invSlot][j]->Quality == ITEM_QUALITY_UNCOMMON)
-                    greenIndexes.push_back(j);
-                else if (itemsPerSlot[invSlot][j]->Quality == ITEM_QUALITY_RARE)
-                    blueIndexes.push_back(j);
-                else if (itemsPerSlot[invSlot][j]->Quality == ITEM_QUALITY_EPIC)
-                purpleIndexes.push_back(j);
-                else if (itemsPerSlot[invSlot][j]->Quality == ITEM_QUALITY_NORMAL)
-                whiteIndexes.push_back(j);
-            }
-            // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : index vectors' sizes:");
-            // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "-- white: %d, green: %d, blue: %d, purple: %d.", whiteIndexes.size(), greenIndexes.size(), blueIndexes.size(), purpleIndexes.size());
-            uint32 randomIndex = 0;
-            float effectiveQuality = gearQuality + frand(-0.2f, 0.085f);
-            if (effectiveQuality < 0.0f)
-                effectiveQuality = 0.0f;
-            else if (effectiveQuality > 1.0f)
-                effectiveQuality = 1.0f;
-            
-            if (!purpleIndexes.empty() && effectiveQuality >= 0.8f){
-                uint32 size = purpleIndexes.size();
-                uint32 indexOffset = static_cast<uint32>(std::round(effectiveQuality * (size - 1)));
-                randomIndex = purpleIndexes[urand(indexOffset, size - 1)];
-            }
-            else if (!blueIndexes.empty() && effectiveQuality >= 0.65f){
-                uint32 size = blueIndexes.size();
-                uint32 indexOffset = static_cast<uint32>(std::round(effectiveQuality * (size - 1)));
-                randomIndex = blueIndexes[urand(indexOffset, size - 1)];
-            }
-            else if (!greenIndexes.empty() && effectiveQuality >= 0.3f){
-                uint32 size = greenIndexes.size();
-                uint32 indexOffset = static_cast<uint32>(std::round(effectiveQuality * (size - 1)));
-                randomIndex = greenIndexes[urand(indexOffset, size - 1)];
-            }
-            else if (!whiteIndexes.empty())
-                randomIndex = SelectRandomContainerElement(whiteIndexes);
-            
-            ItemPrototype const* pProto = itemsPerSlot[invSlot][randomIndex];
-            uint32 randomEnchId = 0;
-
-            if (pProto->RandomProperty){
-                EnchStoreList enchList = GetEnchStoreListByItemRandomProperty(pProto->RandomProperty);
-                if (enchList.empty()){
-                    sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : enchList is empty. Excluding item '%s' (#%d) from candidate list.", pProto->Name1, pProto->ItemId);
-                    return;
-                }
-
-                // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::EquipWarriorGear : found ench list for item proto #%d; list size: %d", pProto->ItemId, enchList.size());
-                // for (EnchStoreItem ench: enchList){
-                //     sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "\t enchId: %d", ench.ench);
-                // }
-
-
-                for (EnchStoreItem ench: enchList){
-                    std::string suffx {sItemRandomPropertiesStore.LookupEntry(ench.ench)->internalName};
-                    if (IsRandomEnchantRelevant(suffx)){
-                        enchIds.push_back(ench.ench);
-                    }
-                }
-                if (enchIds.empty()){
-                    itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
-                    sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : 'enchIds' is empty.");
-                    continue;
-                }
-
-                randomEnchId = enchIds[urand(0, enchIds.size()-1)];
-            }
-            
-            if (!IsItemStatsRelevant(pProto) && !randomEnchId){
-                isGearSelected = false;
-                itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
-                continue;
-            }
-
-            Item* item = Item::CreateItem(pProto->ItemId, 1, me->GetGUID());
-            if (!item){
-                sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : error creating item %d id", pProto->ItemId);
-                isGearSelected = false;
-                itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
-                continue;
-            }
-
-            if (randomEnchId)
-                item->SetItemRandomProperties(randomEnchId);
-            me->SatisfyItemRequirements(pProto);
-
-            uint16 dest;
-            uint8 msg;
-
-            msg = me->CanEquipItem(NULL_SLOT, dest, item, false);
-            if (msg != EQUIP_ERR_OK){
-                sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : me->CanEquipItem returned error %d.", msg);
-                isGearSelected = false;
-                itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
-                continue;
-            }
-            
-            itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
-            me->EquipItem(dest, item, true);
-            if (isFirstRing && invSlot == INVTYPE_FINGER){
-                isFirstRing = false;
-                isGearSelected = false;
-            }
-            else
-                isGearSelected = true;
-            
-            sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::EquipWarriorGear : slot %d, selected item `%s` (#%d).", invSlot, pProto->Name1, pProto->ItemId);
-            sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "\t effectiveQuality = %f", effectiveQuality);
-        }
+    for (auto invSlot: invSlots) {
+        std::sort(itemsPerSlot[invSlot].begin(), itemsPerSlot[invSlot].end(), [](const ItemPrototype* a, const ItemPrototype* b){
+            return a->ItemLevel < b->ItemLevel;
+        });
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : itemsPerSlot[%d].size = %d", invSlot, itemsPerSlot[invSlot].size());
+        GenerateInventorySlotItem(itemsPerSlot, invSlot, true);
     }
+
+    // generate weapon
+    invSlots.clear();
+
+    if (me->GetClass() == CLASS_WARRIOR){
+        invSlots = {
+            INVTYPE_SHIELD,
+            INVTYPE_2HWEAPON,
+            INVTYPE_RANGEDRIGHT,
+            INVTYPE_WEAPON,
+            INVTYPE_WEAPONMAINHAND
+        };
+        for (auto invSlot: invSlots) {
+            std::sort(itemsPerSlot[invSlot].begin(), itemsPerSlot[invSlot].end(), [](const ItemPrototype* a, const ItemPrototype* b){
+                return a->ItemLevel < b->ItemLevel;
+            });
+            // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : itemsPerSlot[%d].size = %d", invSlot, itemsPerSlot[invSlot].size());
+        }
+
+        uint32 coinChance = urand(0, 1);
+        if (coinChance)
+            invSlots = {INVTYPE_RANGED, INVTYPE_RANGEDRIGHT};
+        else
+            invSlots = {INVTYPE_RANGEDRIGHT, INVTYPE_RANGED};
+
+        for (auto invSlot: invSlots)
+            if (GenerateInventorySlotItem(itemsPerSlot, invSlot, true))
+                break;
+
+        bool needToEquipShield = false;
+        bool needToEquipOneHand = false;
+        bool needToEquipTwoHand = false;
+
+        if (std::regex_search(m_currentSpec, std::regex("tank"))){
+            needToEquipShield = true;
+            needToEquipOneHand = true;
+        }
+        
+        GenerateInventorySlotItem(itemsPerSlot, INVTYPE_SHIELD, needToEquipShield);
+        
+        invSlots.clear();
+        coinChance = urand(0, 1);
+        if (coinChance)
+            invSlots = {INVTYPE_WEAPONMAINHAND, INVTYPE_WEAPON};
+        else
+            invSlots = {INVTYPE_WEAPON, INVTYPE_WEAPONMAINHAND};
+
+        for (auto invSlot: invSlots)
+            if (GenerateInventorySlotItem(itemsPerSlot, invSlot, needToEquipOneHand))
+                break;
+        
+        GenerateInventorySlotItem(itemsPerSlot, INVTYPE_2HWEAPON, needToEquipTwoHand);
+    }
+}
+
+void WorldBotAI::GenerateInventorySlotPermEnchant(Item* pItem){
+    if (!pItem)
+    return;
+    
+    float qualityScale = 1.0f;
+    uint32 invSlotType = pItem->GetProto()->InventoryType;
+    std::string enchantName {"Enchant "};
+    if (invSlotType == INVTYPE_CHEST)
+        enchantName.append("Chest");
+    else if (invSlotType == INVTYPE_WRISTS)
+        enchantName.append("Bracer");
+    else if (invSlotType == INVTYPE_HANDS)
+        enchantName.append("Gloves");
+    else if (invSlotType == INVTYPE_FEET)
+        enchantName.append("Boots");
+    else if (invSlotType == INVTYPE_SHIELD)
+        enchantName.append("Shield");
+    else if (invSlotType == INVTYPE_CLOAK)
+        enchantName.append("Cloak");
+    else if (invSlotType == INVTYPE_WEAPON || invSlotType == INVTYPE_WEAPONMAINHAND){
+        enchantName.append("Weapon");
+        qualityScale = 0.1f;
+    }
+    else if (invSlotType == INVTYPE_2HWEAPON)
+        enchantName.append("2H Weapon");
+    else
+        return;
+        
+    
+    float gearQuality = (sPlayerBotMgr.GetWorldBotGearQuality()+frand(-0.2, 0.1)) * qualityScale;
+    if (gearQuality < 0.0f)
+        gearQuality = 0.0f;
+
+    
+    // pItem->SetEnchantment(PERM_ENCHANTMENT_SLOT, 71, 0, 0, me->GetObjectGuid());
+    // const SpellItemEnchantmentEntry* entry = sSpellItemEnchantmentStore.LookupEntry(71);
+    // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "name: %s", entry->description[0]);
+    std::vector<std::string> suffxVector;
+    if (me->GetClass() == CLASS_WARRIOR)
+        suffxVector = {"Stats", "Health", "Absorption", "Agility", "Strength", "Stamina", "Striking", "Impact", 
+            "Icy Chill", "Fiery Weapon", "Demonslaying", "Unholy Weapon", "Crusader", "Lifestealing",
+            "Defense", "Resistance", "Protection", "Dodge", "Block"};
+
+    // std::vector<const SpellEntry*> possibleEnchants;
+    // int32 maxSkillLevel = me->GetLevel() * 5;
+    std::vector<uint32> enchantIds;
+
+    SkillLineAbilityMapBounds skillMapBounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySkillId(SKILL_ENCHANTING);
+    for (auto it = skillMapBounds.first; it != skillMapBounds.second; ++it){
+        const SkillLineAbilityEntry* entry = it->second;
+
+        const SpellEntry* pSpellEntry = sSpellMgr.GetSpellEntry(entry->spellId);
+        if (!pSpellEntry)
+            continue;
+
+        std::regex pattern {enchantName};
+        if (!std::regex_search(pSpellEntry->SpellName[0], pattern))
+            continue;
+
+        if (suffxVector.empty())
+            continue;
+
+        bool isRelevant = false;
+        for (auto suffx: suffxVector){
+            pattern.assign(suffx);
+            if (std::regex_search(pSpellEntry->SpellName[0], pattern)){
+                isRelevant = true;
+                break;
+            }
+        }
+        if (!isRelevant)
+            continue;
+
+        enchantIds.push_back(pSpellEntry->EffectMiscValue[0]);
+    }
+    
+    // not the best way to scale quality of enchants...
+    gearQuality *= qualityScale;
+    uint32 minIndex = static_cast<uint32>( std::round(gearQuality * (enchantIds.size() - 1)) );
+    uint32 maxIndex = static_cast<uint32>(std::round((me->GetLevel() + 10 * gearQuality) / 60.0f  * (enchantIds.size()-1)));
+    if (minIndex > maxIndex)
+        minIndex = maxIndex;
+    uint32 randomEnchantId = enchantIds[urand(minIndex, maxIndex)];
+    pItem->SetEnchantment(PERM_ENCHANTMENT_SLOT, randomEnchantId, 0, 0, me->GetObjectGuid());
 }
 
 bool WorldBotAI::IsRandomEnchantRelevant(std::string suffx){
@@ -319,11 +335,12 @@ bool WorldBotAI::IsRandomEnchantRelevant(std::string suffx){
     switch (me->GetClass()){
         case CLASS_WARRIOR:
             if (suffx == "of the Bear" || suffx == "of the Tiger" || suffx == "of Strength" || suffx == "of Stamina")
-            result = true;
+                result = true;
             break;
         default:
             break;
     }
+
     return result;
 }
 
@@ -360,7 +377,9 @@ bool WorldBotAI::IsItemStatsRelevant(const ItemPrototype* pProto){
                 (itemStats[ITEM_MOD_STAMINA] && itemStats[ITEM_MOD_AGILITY]) ||
                 auraMods[SPELL_AURA_MOD_ATTACK_POWER] ||
                 auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_CRIT_CHANCE] ||
-                auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE]
+                auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE] ||
+                pProto->InventoryType == INVTYPE_RANGED ||
+                pProto->InventoryType == INVTYPE_RANGEDRIGHT
             )
                 result = true;
 
@@ -369,6 +388,147 @@ bool WorldBotAI::IsItemStatsRelevant(const ItemPrototype* pProto){
     }
 
     return result;
+}
+
+bool WorldBotAI::GenerateInventorySlotItem(std::map<uint32 /*slot*/, std::vector<ItemPrototype const*>>& itemsPerSlot, uint32 invSlot, bool isNeedToEquip){
+    bool isGearSelected = false;
+    std::vector<uint32> enchIds;
+    bool isFirstRing = true;
+
+    while (itemsPerSlot[invSlot].size() > 0 && !isGearSelected){
+        float gearQuality = sPlayerBotMgr.GetWorldBotGearQuality();
+        
+        // gearQuality = frand(gearQuality, 1.0f);
+        // uint32 indexOffset = static_cast<uint32>( std::floor(frand(gearQuality, 1.0f) * itemsPerSlot[invSlot].size()) );
+        std::vector<uint32> whiteIndexes;
+        std::vector<uint32> greenIndexes;
+        std::vector<uint32> blueIndexes;
+        std::vector<uint32> purpleIndexes;
+        for (uint32 j = 0; j < itemsPerSlot[invSlot].size(); ++j){
+            if (itemsPerSlot[invSlot][j]->Quality == ITEM_QUALITY_UNCOMMON)
+                greenIndexes.push_back(j);
+            else if (itemsPerSlot[invSlot][j]->Quality == ITEM_QUALITY_RARE)
+                blueIndexes.push_back(j);
+            else if (itemsPerSlot[invSlot][j]->Quality == ITEM_QUALITY_EPIC)
+            purpleIndexes.push_back(j);
+            else if (itemsPerSlot[invSlot][j]->Quality == ITEM_QUALITY_NORMAL)
+                whiteIndexes.push_back(j);
+        }
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : index vectors' sizes:");
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "-- white: %d, green: %d, blue: %d, purple: %d.", whiteIndexes.size(), greenIndexes.size(), blueIndexes.size(), purpleIndexes.size());
+        uint32 randomIndex = 0;
+        float effectiveQuality = gearQuality + frand(-0.2f, 0.085f);
+        if (effectiveQuality < 0.0f)
+            effectiveQuality = 0.0f;
+        else if (effectiveQuality > 1.0f)
+            effectiveQuality = 1.0f;
+        
+        if (!purpleIndexes.empty() && effectiveQuality >= 0.8f){
+            uint32 size = purpleIndexes.size();
+            uint32 indexOffset = static_cast<uint32>(std::round(effectiveQuality * (size - 1)));
+            randomIndex = purpleIndexes[urand(indexOffset, size - 1)];
+        }
+        else if (!blueIndexes.empty() && effectiveQuality >= 0.65f){
+            uint32 size = blueIndexes.size();
+            uint32 indexOffset = static_cast<uint32>(std::round(effectiveQuality * (size - 1)));
+            randomIndex = blueIndexes[urand(indexOffset, size - 1)];
+        }
+        else if (!greenIndexes.empty() && effectiveQuality >= 0.3f){
+            uint32 size = greenIndexes.size();
+            uint32 indexOffset = static_cast<uint32>(std::round(effectiveQuality * (size - 1)));
+            randomIndex = greenIndexes[urand(indexOffset, size - 1)];
+        }
+        else if (!whiteIndexes.empty())
+            randomIndex = SelectRandomContainerElement(whiteIndexes);
+        
+        ItemPrototype const* pProto = itemsPerSlot[invSlot][randomIndex];
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "\t Evaluating `%s`; randomIndex = %d; effectiveQuality = %f", pProto->Name1, randomIndex, effectiveQuality);
+        uint32 randomEnchId = 0;
+
+        if (pProto->RandomProperty){
+            EnchStoreList enchList = GetEnchStoreListByItemRandomProperty(pProto->RandomProperty);
+            if (enchList.empty()){
+                sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : enchList is empty. Excluding item '%s' (#%d) from candidate list.", pProto->Name1, pProto->ItemId);
+                return isGearSelected;
+            }
+
+            // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::EquipWarriorGear : found ench list for item proto #%d; list size: %d", pProto->ItemId, enchList.size());
+            // for (EnchStoreItem ench: enchList){
+            //     sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "\t enchId: %d", ench.ench);
+            // }
+
+
+            for (EnchStoreItem ench: enchList){
+                std::string suffx {sItemRandomPropertiesStore.LookupEntry(ench.ench)->internalName};
+                if (IsRandomEnchantRelevant(suffx)){
+                    enchIds.push_back(ench.ench);
+                }
+            }
+            if (enchIds.empty()){
+                itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
+                // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : 'enchIds' is empty.");
+                continue;
+            }
+
+            randomEnchId = enchIds[urand(0, enchIds.size()-1)];
+        }
+        
+        if (!randomEnchId && !IsItemStatsRelevant(pProto)){
+            isGearSelected = false;
+            itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
+            continue;
+        }
+
+        Item* item = Item::CreateItem(pProto->ItemId, 1, me->GetGUID());
+        if (!item){
+            sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : error creating item %d id", pProto->ItemId);
+            isGearSelected = false;
+            itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
+            continue;
+        }
+
+        if (randomEnchId)
+            item->SetItemRandomProperties(randomEnchId);
+        me->SatisfyItemRequirements(pProto);
+
+        GenerateInventorySlotPermEnchant(item);
+
+        if (isNeedToEquip){
+            uint16 dest;
+            uint8 msg;
+
+            msg = me->CanEquipItem(NULL_SLOT, dest, item, false);
+            if (msg != EQUIP_ERR_OK){
+                sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : me->CanEquipItem returned error %d.", msg);
+                isGearSelected = false;
+                itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
+                continue;
+            }
+
+            me->EquipItem(dest, item, true);
+        }
+        else {
+            ItemPosCountVec dest;
+            uint8 msg = me->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item);
+            if (msg == EQUIP_ERR_OK)
+            me->StoreItem(dest, item, true);
+        }
+        
+        itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
+        
+
+        if (isFirstRing && invSlot == INVTYPE_FINGER){
+            isFirstRing = false;
+            isGearSelected = false;
+        }
+        else
+            isGearSelected = true;
+        
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::EquipWarriorGear : slot %d, selected item `%s` (#%d).", invSlot, pProto->Name1, pProto->ItemId);
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "\t effectiveQuality = %f", effectiveQuality);
+    }
+
+    return isGearSelected;
 }
 
 void WorldBotAI::InitTalentsByRandomSpec(){
@@ -394,30 +554,5 @@ void WorldBotAI::InitTalentsByRandomSpec(){
             me->LearnTalent(id, rank);
             index++;
         }
-        if (me->HasSpell(23922))
-            sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::IniTalentsByRandomSpec : I've learnt spell `%s` with id %d", sSpellMgr.GetSpellEntry(23922)->SpellName, 23922);
     }
-        
-    // std::vector<uint32> talentTabsForClass;
-    // for (uint32 talentTabId = 0; talentTabId < sTalentTabStore.GetNumRows(); ++talentTabId)
-    // {
-    //     TalentTabEntry const* talentTabEntry = sTalentTabStore.LookupEntry(talentTabId);
-    //     if (!talentTabEntry)
-    //     continue;
-        
-    //     if ((me->GetClassMask() & talentTabEntry->ClassMask) == 0)
-    //     continue;
-        
-    //     talentTabsForClass.push_back(talentTabId);
-    // }
-    
-    // if (talentTabsForClass.empty()){
-    //     sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::InitTalentSpecs : no talent tabs were found; talents were not been initialized.");
-    //     return;
-    // }
-    
-    // warrior tank
-    // для талантов не нужно хранить таблицы; изучение таланта происходит посредством вызова me->LearnTalent(id, rank),
-    // в который передаётся id таланта и его ранг
-    
 }

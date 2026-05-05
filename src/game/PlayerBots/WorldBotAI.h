@@ -4,6 +4,7 @@
 #include "PlayerBotAI.h"
 #include "PlayerBotMgr.h"
 #include "SpellEntry.h"
+#include "Spell.h"
 #include "Player.h"
 #include "WorldPacket.h"
 #include "Opcodes.h"
@@ -36,6 +37,7 @@ public:
         void InitTalentsByRandomSpec();
         void GenerateGear();
         
+        
 private:
     ShortTimeTracker m_updateTimer;
     std::unordered_map<std::string /*spell name*/, std::vector<const SpellEntry*> /*ranks*/> m_spellBook;
@@ -56,6 +58,10 @@ private:
 
     bool IsRandomEnchantRelevant(std::string suffx);
     bool IsItemStatsRelevant(const ItemPrototype* pProto);
+    bool GenerateInventorySlotItem(
+        std::map<uint32 /*slot*/, std::vector<ItemPrototype const*>>& itemsPerSlot,
+        uint32 invSlot, bool isNeedToEquip /* true -- equip, false -- store */);
+    void GenerateInventorySlotPermEnchant(Item*);
 };
 
 

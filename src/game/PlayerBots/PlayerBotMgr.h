@@ -9,6 +9,7 @@
 
 #include <vector>
 #include <memory>
+#include <regex>
 
 class PlayerBotAI;
 class WorldSession;
@@ -112,7 +113,7 @@ class PlayerBotMgr
         void Start() { m_confEnableRandomBots = true; }
 
         inline float GetWorldBotGearQuality() { return m_worldBotConfig.gearQuality; }
-        std::unordered_map<std::string, std::vector<std::pair<uint32, uint32>>> GetSpecsFilterByRegex(std::string regex);
+        std::unordered_map<std::string /* spec name */, std::vector<std::pair<uint32, uint32>> /* talent sequence */> GetSpecsFilterByRegex(std::string regex);
         std::vector<std::pair<uint32, uint32>> GetSpecByName(std::string properName);
 
     protected:

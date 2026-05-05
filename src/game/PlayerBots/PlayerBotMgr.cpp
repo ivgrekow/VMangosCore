@@ -20,7 +20,6 @@
 #include "Spell.h"
 
 #include <fstream>
-#include <regex>
 
 INSTANTIATE_SINGLETON_1(PlayerBotMgr);
 
