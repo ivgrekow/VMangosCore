@@ -9,6 +9,7 @@
 
 #include <vector>
 #include <memory>
+#include <regex>
 
 class PlayerBotAI;
 class WorldSession;
@@ -66,6 +67,9 @@ struct PlayerBotStats
     confMaxOnline(0), confMinOnline(0), confRandomBotsRefresh(0), confUpdateDiff(0) {}
 };
 
+struct WorldBotConfig {
+    float gearQuality;
+};
 
 class PlayerBotMgr
 {
@@ -107,6 +111,11 @@ class PlayerBotMgr
         uint32 GenBotAccountId() { return ++m_maxAccountId; }
         PlayerBotStats& GetStats(){ return m_stats; }
         void Start() { m_confEnableRandomBots = true; }
+
+        inline float GetWorldBotGearQuality() { return m_worldBotConfig.gearQuality; }
+        std::unordered_map<std::string /* spec name */, std::vector<std::pair<uint32, uint32>> /* talent sequence */> GetSpecsFilterByRegex(std::string regex);
+        std::vector<std::pair<uint32, uint32>> GetSpecByName(std::string properName);
+
     protected:
         // How long since last update?
         uint32 m_elapsedTime;
@@ -128,6 +137,9 @@ class PlayerBotMgr
         bool m_confDebug;
         bool m_confEnableRandomBots;
         bool m_confBattleBotAutoJoin;
+
+        WorldBotConfig m_worldBotConfig;
+        std::unordered_map<std::string, std::vector<std::pair<uint32, uint32>>> m_worldBotTalentSpecs;
 };
 
 #define sPlayerBotMgr MaNGOS::Singleton<PlayerBotMgr>::Instance()

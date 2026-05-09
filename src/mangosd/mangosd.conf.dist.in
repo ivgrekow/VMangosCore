@@ -3015,6 +3015,10 @@ AHBot.ah.fid = 120
 #        Default: 0 - off
 #                 1 - on
 #
+#    WorldBot.MaxBots
+#        Maximum number of world bots that normal players are allowed to summon.
+#        Default: 1
+#
 ###################################################################################################################
 RandomBot.Enable = 0
 RandomBot.MinBots = 0
@@ -3033,6 +3037,9 @@ PartyBot.RandomGearLevelDifference = 10
 
 BattleBot.AutoEquip = 1
 BattleBot.AutoJoin = 0
+
+WorldBot.MaxBots = 1
+WorldBot.GearQuality = 0.5
 
 ###################################################################################################################
 #    Mail flooding mitigation

@@ -300,6 +300,10 @@ class ChatHandler
         bool HandleBattleBotShowPathCommand(char* args);
         bool HandleBattleBotShowAllPathsCommand(char* args);
 
+        bool HandleWorldBotAddCommand(char * args);
+        bool HandleWorldBotRemoveCommand(char * args);
+        bool HandleWorldBotRecordPointCommand(char * args);
+
         // spell_disabled
         bool HandleReloadSpellDisabledCommand(char *args);
         // AutoBroadCast

@@ -132,6 +132,14 @@ ChatCommand * ChatHandler::getCommandTable()
         { "showallpaths", SEC_ADMINISTRATOR,    false, &ChatHandler::HandleBattleBotShowAllPathsCommand, "", nullptr },
         { nullptr,        0,                    false, nullptr,                                          "", nullptr },
     };
+    
+    static ChatCommand worldBotCommandTable[] =
+    {
+        { "add",          SEC_ADMINISTRATOR,    false, &ChatHandler::HandleWorldBotAddCommand,           "", nullptr },
+        { "remove",       SEC_ADMINISTRATOR,    false, &ChatHandler::HandleWorldBotRemoveCommand,        "", nullptr },
+        { "recordpoint",  SEC_ADMINISTRATOR,    false, &ChatHandler::HandleWorldBotRecordPointCommand,   "", nullptr },
+        { nullptr,        0,                    false, nullptr,                                          "", nullptr },
+    };
 
     static ChatCommand accountSetCommandTable[] =
     {
@@ -1218,6 +1226,7 @@ ChatCommand * ChatHandler::getCommandTable()
         { "ahbot",          SEC_ADMINISTRATOR,  true, nullptr,                            "Manage AH bot", ahbotCommandTable    },
         { "partybot",       SEC_ADMINISTRATOR,  false, nullptr,                       "Manage party bots", partyBotCommandTable },
         { "battlebot",      SEC_ADMINISTRATOR,  true, nullptr,                      "Manage battle bots", battleBotCommandTable},
+        { "worldbot",       SEC_ADMINISTRATOR,  false, nullptr,                      "Manage world bots", worldBotCommandTable},
         { "world",          SEC_ADMINISTRATOR,  false, nullptr,                                        "", worldCommandTable    },
         { "possess",        SEC_GAMEMASTER,     false, &ChatHandler::HandlePossessCommand,             "", nullptr              },
         { "cinematic",      SEC_DEVELOPER,      false, nullptr,                                        "", cinematicCommandTable},
