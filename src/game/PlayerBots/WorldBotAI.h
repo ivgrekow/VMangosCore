@@ -6,13 +6,15 @@
 #include "SpellEntry.h"
 #include "Spell.h"
 #include "Player.h"
+#include "Group.h"
 #include "WorldPacket.h"
 #include "Opcodes.h"
 #include "ObjectMgr.h"
 #include "ItemEnchantmentMgr.h"
+#include "Util.h"
 
 #define WB_UPDATE_INTERVAL 1000
-
+#define WB_UPDATE_MOVEMENT_INTERVAL 500
 
 class WorldBotAI : public PlayerBotAI
 {
@@ -32,19 +34,51 @@ public:
         bool OnSessionLoaded(PlayerBotEntry* entry, WorldSession* sess) final;
         void OnPlayerLogin() final;
         void UpdateAI(uint32 diff);
-        void OnPacketRecieved(WorldPacket const* packet);
+        void OnPacketReceived(WorldPacket const* packet) override;
         void PopulateSpellData();
         void InitTalentsByRandomSpec();
         void GenerateGear();
+
+        // groups and raids
+        bool AreOthersOnSameTarget(ObjectGuid guid, bool checkMelee = true, bool checkSpells = true) const;
+        Player* GetPartyLeader() const;
+        Unit* GetMarkedTarget(RaidTargetIcon mark) const;
         
+        // items
+        void UseMount();
+        void AddItemToInventory(uint32 itemId, uint32 count = 1);
+        bool UseItemEffect(Item* pItem);
+        
+        // movement
+        void UpdateMovements();
+        void FollowLeader();
+        void TravelToTarget(Unit* pTarget);
+        void TravelToPoint(uint32 mapId, Position pos);
+        
+        // combat
+        bool IsInDuel() const;
+        bool CanTryToCastSpell(Unit const* pTarget, SpellEntry const* pSpellEntry) const;
+        SpellCastResult DoCastSpell(Unit* pTarget, SpellEntry const* pSpellEntry);
+        bool IsValidHostileTarget(Unit const* pTarget) const;
+        bool CanUseCrowdControl(SpellEntry const* pSpellEntry, Unit* pTarget) const;
+        Unit* SelectPartyAttackTarget() const;
+        Unit* SelectAttackTarget(Player* pLeader) const;
+        bool AttackStart(Unit* pVictim);
         
 private:
     ShortTimeTracker m_updateTimer;
+    Item* m_ridingPet = nullptr;
     std::unordered_map<std::string /*spell name*/, std::vector<const SpellEntry*> /*ranks*/> m_spellBook;
+    std::vector<const SpellEntry*> m_proffessionBook;
     std::string m_currentSpec;
     uint32 m_honorRank = 0;
     bool m_isInitialized = false;
+    ShortTimeTracker m_movementTimer;
+    std::vector<WorldBotConfig::TravelNode> m_travelPath;
 
+    std::vector<RaidTargetIcon> m_marksToCC;
+    std::vector<RaidTargetIcon> m_marksToFocus;
+    CombatBotRoles m_role = ROLE_INVALID;
     Player* m_leader = nullptr;
     uint8 m_race = 0;
     uint8 m_class = 0;
@@ -56,12 +90,16 @@ private:
     float m_z = 0.0f;
     float m_o = 0.0f;
 
-    bool IsRandomEnchantRelevant(std::string suffx);
-    bool IsItemStatsRelevant(const ItemPrototype* pProto);
+    bool IsRandomEnchantRelevant(std::string suffx) const;
+    bool AreItemStatsRelevant(const ItemPrototype* pProto) const;
     bool GenerateInventorySlotItem(
         std::map<uint32 /*slot*/, std::vector<ItemPrototype const*>>& itemsPerSlot,
         uint32 invSlot, bool isNeedToEquip /* true -- equip, false -- store */);
     void GenerateInventorySlotPermEnchant(Item*);
+    void PopulateProffessionSpells();
+
+    void UpdateOutOfCombatAI();
+    void UpdateOutOfCombatWarrior();
 };
 
 

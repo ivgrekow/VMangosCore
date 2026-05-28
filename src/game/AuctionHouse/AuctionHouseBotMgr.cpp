@@ -7,30 +7,13 @@
 #include "AuctionHouseBotMgr.h"
 #include "Config/Config.h"
 #include "Chat.h"
+#include "Util.h"
 
 #include "ItemEnchantmentMgr.h"
 
 #include <random>
 
 INSTANTIATE_SINGLETON_1(AuctionHouseBotMgr);
-
-float linlin(float num, float source_left, float source_right, float target_left, float target_right){
-    if (target_left == target_right)
-        return target_right;
-    
-    if (source_left == source_right)
-    {
-        num = source_right;
-        if (num <= target_left)
-            return target_left;
-        else if (num >= target_right)
-            return target_right;
-        else
-            return num;
-    }            
-
-    return ( (num - source_left) / (source_right - source_left) * (target_right - target_left) + target_left );
-};
 
 float AuctionHouseBotMgr::getMultiplierForRandomItem(std::string suffx, uint32 itemSubclass){
     float multiplier = 1.0f;
@@ -194,7 +177,7 @@ void AuctionHouseBotMgr::Load()
         m_config.reset();
 
     /*2 - LOAD */
-    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `item_id`, `avg_buyout` FROM `auctionhousebot`"));
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `item_id`, `avg_buyout` FROM `auctionhousebot_improved`"));
 
     if (!result)
     {
@@ -367,7 +350,7 @@ void AuctionHouseBotMgr::Update(bool force /* = false */)
 
         if (needToAdd){
             AddItem(ahbotEntry, auctionHouse);
-            auctionHouseCount;
+            auctionHouseCount++;
             cycleCounter = 0;
         }
     }

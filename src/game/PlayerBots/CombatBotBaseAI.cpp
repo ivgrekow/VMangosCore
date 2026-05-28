@@ -2580,6 +2580,14 @@ void CombatBotBaseAI::EquipRandomGearInEmptySlots()
                 continue;
         }
 
+        if (me->GetLevel() - pProto->RequiredLevel > 10)
+            continue;
+        
+        if (me->GetLevel() < 60 && (pProto->ItemLevel - me->GetLevel()) > 5)
+            continue;
+        else if (me->GetLevel() == 60 && pProto->ItemLevel < 60)
+            continue;
+
         // Avoid low level items
         if ((pProto->ItemLevel + sWorld.getConfig(CONFIG_UINT32_PARTY_BOT_RANDOM_GEAR_LEVEL_DIFFERENCE)) < me->GetLevel())
             continue;

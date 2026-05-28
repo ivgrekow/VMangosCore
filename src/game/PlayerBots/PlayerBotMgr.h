@@ -69,6 +69,50 @@ struct PlayerBotStats
 
 struct WorldBotConfig {
     float gearQuality;
+
+    struct TravelNode {
+        uint32 id; // prim key
+        std::string name;
+        uint32 map_id;
+        float x, y, z;
+        bool linked;
+    };
+
+    struct TravelNodeLink {
+        uint32 node_id; // prim key
+        uint32 to_node_id; // prim key
+        uint8 type;
+        uint32 object;
+        float distance;
+        float swim_distance;
+        float extra_cost;
+        uint8 calculated;
+        uint8 max_creature0;
+        uint8 max_creature1;
+        uint8 max_creature2;
+    };
+
+    struct TravelNodePath {
+        uint32 node_id; // prim key
+        uint32 to_node_id; // prim key
+        uint32 nr; // prim key
+        uint32 map_id;
+        float x, y, z;
+    };
+
+    std::vector<TravelNode> travelNode;
+    std::vector<TravelNodeLink> travelNodeLink;
+    std::vector<TravelNodePath> travelNodePath;
+};
+
+enum TravelNodePathType {
+    PATH_TYPE_NONE,
+    PATH_TYPE_WALK,
+    PATH_TYPE_AREATRIGGER,
+    PATH_TYPE_TRANSPORT,
+    PATH_TYPE_FLIGHTPATH,
+    PATH_TYPE_TELEPORTSPELL,
+    PATH_TYPE_STATICPORTAL
 };
 
 class PlayerBotMgr
@@ -139,7 +183,8 @@ class PlayerBotMgr
         bool m_confBattleBotAutoJoin;
 
         WorldBotConfig m_worldBotConfig;
-        std::unordered_map<std::string, std::vector<std::pair<uint32, uint32>>> m_worldBotTalentSpecs;
+        std::unordered_map<std::string, std::vector<std::pair<uint32, uint32>>> m_worldBotDefaultTalentSpecs;
+        // подумать над форматом хранимых данных travelnode из бд...
 };
 
 #define sPlayerBotMgr MaNGOS::Singleton<PlayerBotMgr>::Instance()

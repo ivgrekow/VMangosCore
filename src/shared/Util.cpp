@@ -660,3 +660,21 @@ std::vector<std::string> SplitStringByDelimiter(std::string const& str, char del
 
     return vec;
 }
+
+float linlin(float num, float source_left, float source_right, float target_left, float target_right){
+    if (target_left == target_right)
+        return target_right;
+    
+    if (source_left == source_right)
+    {
+        num = source_right;
+        if (num <= target_left)
+            return target_left;
+        else if (num >= target_right)
+            return target_right;
+        else
+            return num;
+    }            
+
+    return ( (num - source_left) / (source_right - source_left) * (target_right - target_left) + target_left );
+};

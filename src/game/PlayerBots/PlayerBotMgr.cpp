@@ -148,7 +148,7 @@ void PlayerBotMgr::Load()
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr] %u now loading", m_stats.loadingCount);
     }
 
-    // 9 - WorldBot talent sequences
+    // 9 - WorldBot talent sequences (default hardcoded)
     // warrior tank
     std::vector<std::pair<uint32, uint32>> talentSequence
     {
@@ -173,7 +173,161 @@ void PlayerBotMgr::Load()
         {130, 2}, {130, 3}, {130, 4}, // Deflection
         {150, 0} // Improved Shield Wall
     };
-    m_worldBotTalentSpecs["warrior_tank"] = talentSequence;
+    m_worldBotDefaultTalentSpecs["warrior_tank"] = talentSequence;
+    talentSequence.clear();
+
+    // warrior arms
+    talentSequence = {
+        {127, 0}, {127, 1}, {127, 2}, // Improved Rend
+        {124, 0}, {124, 1}, // Improved Heroic Strike
+        {641, 0}, {641, 1}, {641, 2}, {641, 3}, {641, 4}, // Tactical Mastery
+        {121, 0}, {121, 1}, {121, 2}, // Deep Wounds
+        {131, 0}, {131, 1}, // Improved Overpower
+        {662, 0}, {662, 1}, // Impale
+        {137, 0}, // Anger Managment
+        {136, 0}, {136, 1}, // Two-Handed Weapon Specialization
+        {133, 0}, // Sweeping Strikes
+        {136, 2}, {136, 3}, {136, 4}, // Two-Handed Weapon Specialization
+        {124, 2}, // Improved Heroic Strike
+        {129, 0}, {129, 1}, {129, 2}, // Improved Hamstring
+        {126, 0}, {126, 1}, // Improved Charge
+        {135, 0}, // Mortal Strike
+        {157, 0}, {157, 1}, {157, 2}, {157, 3}, {157, 4}, // Cruelty
+        {159, 0}, {159, 1}, {159, 2}, {159, 3}, {159, 4}, // Unbridled Wrath
+        {160, 0}, // Piercing Howl
+        {661, 0}, {661, 1}, {661, 2}, // Blood Craze
+        {166, 0}, // Improved Cleave
+        {1542, 0}, {1542, 1}, // Improved Execute
+        {155, 0}, {155, 1}, {155, 2} // Enrage
+    };
+    m_worldBotDefaultTalentSpecs["warrior_arms"] = talentSequence;
+    talentSequence.clear();
+    
+    // warrior fury
+    talentSequence = {
+        {157, 0}, {157, 1}, {157, 2}, {157, 3}, {157, 4}, // Cruelty
+        {159, 0}, {159, 1}, {159, 2}, {159, 3}, {159, 4}, // Unbridled Wrath
+        {160, 0}, // Piercing Howl
+        {166, 0}, {166, 1}, {166, 2}, // Improved Cleave
+        {160, 0}, // Piercing Howl
+        {661, 0}, // Blood Craze
+        {155, 0}, {155, 1}, {155, 2}, {155, 3}, {155, 4}, // Enrage
+        {165, 0}, // Death Wish
+        {1543, 0}, {1543, 1}, // Improved Intercept
+        {661, 1}, {661, 2}, // Blood Craze
+        {156, 0}, {156, 1}, {156, 2}, {156, 3}, {156, 4}, // Flurry
+        {167, 0}, // Blood Thirst
+        {127, 0}, {127, 1}, {127, 2}, // Improved Rend
+        {124, 0}, {124, 1}, // Improved Heroic Strike
+        {641, 0}, {641, 1}, {641, 2}, {641, 3}, {641, 4}, // Tactical Mastery
+        {137, 0}, // Anger Managment
+        {121, 0}, {121, 1}, {121, 2}, // Deep Wounds
+        {124, 2}, // Improved Heroic Strike
+        {662, 0}, {662, 1}, // Impale
+        {1542, 0}, {1542, 1}, // Improved Execute
+        {1581, 0}, // Dual Wield Specialization
+    };
+    m_worldBotDefaultTalentSpecs["warrior_fury"] = talentSequence;
+    talentSequence.clear();
+
+    // druid restoration
+    talentSequence = {
+        {821, 0}, {821, 1}, {821, 2}, {821, 3}, {821, 4}, // Improved Mark of the Wild
+        {823, 0}, {823, 1}, {823, 2}, {823, 3}, {823, 4}, // Nature Focus
+        {824, 0}, {824, 1}, {824, 2}, {824, 3}, {824, 4}, // Improved Healing Touch
+        {827, 0}, // Insect Swarm
+        {830, 0}, {830, 1}, {830, 2}, // Improved Rejuvenation
+        {843, 0}, // Tranquil Spirit
+        {831, 0}, // Nature Swiftness
+        {843, 1}, {843, 2}, {843, 3}, {843, 4}, // Tranquil Spirit
+        {828, 0}, {828, 1}, {828, 2}, {828, 3}, {828, 4}, // Gift of the Nature
+        {844, 0}, // Swiftmend
+        {829, 0}, {829, 1}, {829, 2}, // Reflection
+        {841, 0}, {841, 1}, {841, 2}, {841, 3}, {841, 4}, // Subtlety
+        {762, 0}, {762, 1}, {762, 2}, {762, 3}, {762, 4}, // Improved Wrath
+        {761, 0}, // Nature's Grasp
+        {921, 0}, {921, 1}, {921, 2}, {921, 3}, // Improved Nature's Grasp
+        {782, 0}, {782, 1}, // Improved Thorns
+    };
+    m_worldBotDefaultTalentSpecs["druid_restoration"] = talentSequence;
+    talentSequence.clear();
+
+    // worldbot travelnodes
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> [PlayerBotMgr] Loading worldbot travelnodes...");
+    result.reset();
+    result = WorldDatabase.PQuery("SELECT id, name, map_id, x, y, z, linked FROM worldbot_travelnode;");
+    if (!result)
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Table `worldbot_travelnode` is empty.");
+    else{
+        do {
+            fields = result->Fetch();
+            uint32 id = fields[0].GetUInt32();
+            std::string name {fields[1].GetString()};
+            uint32 map_id = fields[2].GetUInt32();
+            float x = fields[3].GetFloat();
+            float y = fields[4].GetFloat();
+            float z = fields[5].GetFloat();
+            uint8 linked = fields[6].GetUInt8();
+            WorldBotConfig::TravelNode travelNode;
+            travelNode.id = id;
+            travelNode.name = name;
+            travelNode.map_id = map_id;
+            travelNode.x = x;
+            travelNode.y = y;
+            travelNode.z = z;
+            travelNode.linked = linked;
+            m_worldBotConfig.travelNode.push_back(travelNode);
+        } while (result->NextRow());
+    }
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %d worldbot travelnodes.", m_worldBotConfig.travelNode.size());
+
+    // worldbot travelnode links
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> [PlayerBotMgr] Loading worldbot travelnode links...");
+    result.reset();
+    result = WorldDatabase.PQuery("SELECT node_id, to_node_id, type, object, distance, swim_distance, extra_cost, calculated, max_creature_0, max_creature_1, max_creature_2 FROM worldbot_travelnode_link;");
+    if (!result)
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Table `worldbot_travelnode_link` is empty.");
+    else {
+        do {
+            fields = result->Fetch();
+            WorldBotConfig::TravelNodeLink travelnodeLink;
+            travelnodeLink.node_id = fields[0].GetUInt32();
+            travelnodeLink.to_node_id = fields[1].GetUInt32();
+            travelnodeLink.type = fields[2].GetUInt8();
+            travelnodeLink.object = fields[3].GetUInt32();
+            travelnodeLink.distance = fields[4].GetFloat();
+            travelnodeLink.swim_distance = fields[5].GetFloat();
+            travelnodeLink.extra_cost = fields[6].GetFloat();
+            travelnodeLink.calculated = fields[7].GetUInt8();
+            travelnodeLink.max_creature0 = fields[8].GetUInt8();
+            travelnodeLink.max_creature1 = fields[9].GetUInt8();
+            travelnodeLink.max_creature2 = fields[10].GetUInt8();
+            m_worldBotConfig.travelNodeLink.push_back(travelnodeLink);
+        } while (result->NextRow());
+    }
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %d worldbot travelnode links.", m_worldBotConfig.travelNodeLink.size());
+
+    // worldbot travelnode paths
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> [PlayerBotMgr] Loading worldbot travelnode paths...");
+    result.reset();
+    result = WorldDatabase.PQuery("SELECT node_id, to_node_id, nr, map_id, x, y, z FROM worldbot_travelnode_path;");
+    if (!result)
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Table `worldbot_travelnode_path` is empty.");
+    else {
+        do {
+            fields = result->Fetch();
+            WorldBotConfig::TravelNodePath travelnodePath;
+            travelnodePath.node_id = fields[0].GetUInt32();
+            travelnodePath.to_node_id = fields[1].GetUInt32();
+            travelnodePath.nr = fields[2].GetUInt32();
+            travelnodePath.map_id = fields[3].GetUInt32();
+            travelnodePath.x = fields[4].GetFloat();
+            travelnodePath.y = fields[5].GetFloat();
+            travelnodePath.z = fields[6].GetFloat();
+            m_worldBotConfig.travelNodePath.push_back(travelnodePath);
+        } while (result->NextRow());
+    }
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %d worldbot travelnode paths.", m_worldBotConfig.travelNodePath.size());
 }
 
 void PlayerBotMgr::DeleteAll()
@@ -2085,7 +2239,7 @@ bool ChatHandler::HandleWorldBotAddCommand(char * args){
     float x, y, z;
     pPlayer->GetNearPoint(pPlayer, x, y, z, 0, 5.0f, frand(0.0f, 6.0f));
     
-    WorldBotAI* ai = new WorldBotAI(pPlayer, botRace, (uint8)CLASS_WARRIOR, (uint8)botLevel, pPlayer->GetMapId(), pPlayer->GetMap()->GetInstanceId(),
+    WorldBotAI* ai = new WorldBotAI(nullptr, botRace, (uint8)CLASS_WARRIOR, (uint8)botLevel, pPlayer->GetMapId(), pPlayer->GetMap()->GetInstanceId(),
         x, y, z, pPlayer->GetOrientation());
     if (sPlayerBotMgr.AddBot(ai))
         SendSysMessage("New world bot added.");
@@ -2146,7 +2300,7 @@ std::unordered_map<std::string, std::vector<std::pair<uint32, uint32>>> PlayerBo
     std::unordered_map<std::string, std::vector<std::pair<uint32, uint32>>> specMap;
 
     std::regex pattern(regex);
-    for (const auto entry: m_worldBotTalentSpecs){
+    for (const auto entry: m_worldBotDefaultTalentSpecs){
         if (std::regex_search(entry.first, pattern)){
             specMap[entry.first] = entry.second;
         }
@@ -2158,8 +2312,8 @@ std::unordered_map<std::string, std::vector<std::pair<uint32, uint32>>> PlayerBo
 std::vector<std::pair<uint32, uint32>> PlayerBotMgr::GetSpecByName(std::string properName){
     std::vector<std::pair<uint32, uint32>> talentSequence;
     
-    auto it = m_worldBotTalentSpecs.find(properName);
-    if (it != m_worldBotTalentSpecs.end())
+    auto it = m_worldBotDefaultTalentSpecs.find(properName);
+    if (it != m_worldBotDefaultTalentSpecs.end())
         talentSequence = it->second;
 
     return talentSequence;

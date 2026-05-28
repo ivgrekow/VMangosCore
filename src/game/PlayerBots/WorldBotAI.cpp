@@ -23,9 +23,21 @@ void WorldBotAI::UpdateAI(uint32 const diff){
         m_isInitialized = true;
         me->SetVisibility(VISIBILITY_ON);
     }
+
+    // if (!m_movementTimer.Passed())
+    //     m_movementTimer.Update(diff);
+    // else{
+    //     // me->GetMotionMaster()->MovePoint(0, m_leader->GetPositionX(), m_leader->GetPositionX(),
+    //     //     m_leader->GetPositionZ(), MOVE_EXCLUDE_STEEP_SLOPES);
+    //     m_movementTimer.Reset(WB_UPDATE_MOVEMENT_INTERVAL);
+    //     UpdateMovements();
+    // }
+    UpdateMovements();
+
+    UpdateOutOfCombatAI();
 }
 
-void WorldBotAI::OnPacketRecieved(WorldPacket const* packet){
+void WorldBotAI::OnPacketReceived(WorldPacket const* packet){
     switch (packet->GetOpcode()){
         case SMSG_NEW_WORLD:
         {
@@ -49,6 +61,20 @@ void WorldBotAI::OnPacketRecieved(WorldPacket const* packet){
             *data << uint32(time(nullptr));
             me->GetSession()->QueuePacket(std::move(data));
             break;
+        }
+        case SMSG_GROUP_INVITE:
+        {
+            std::unique_ptr<WorldPacket> data = std::make_unique<WorldPacket>(CMSG_GROUP_ACCEPT, 8);
+            *data << me->GetObjectGuid();
+            me->GetSession()->QueuePacket(std::move(data));
+
+            const uint8* leaderName = packet->contents();
+            Player* leader = sObjectMgr.GetPlayer((char*)leaderName);
+            if (leader){
+                m_leader = leader;
+            }
+
+            return;
         }
     }
 }
@@ -221,9 +247,20 @@ void WorldBotAI::GenerateGear(){
         bool needToEquipOneHand = false;
         bool needToEquipTwoHand = false;
 
-        if (std::regex_search(m_currentSpec, std::regex("tank"))){
+        if (m_role == ROLE_TANK){
             needToEquipShield = true;
             needToEquipOneHand = true;
+        }
+        else if (m_role == ROLE_MELEE_DPS){
+            if (std::regex_search(m_currentSpec, std::regex("fury"))){
+                if (me->HasSpell(674))
+                    needToEquipOneHand = true;
+                else 
+                    needToEquipTwoHand = true;
+            }
+            else if (std::regex_search(m_currentSpec, std::regex("arms"))){
+                needToEquipTwoHand = true;
+            }
         }
         
         GenerateInventorySlotItem(itemsPerSlot, INVTYPE_SHIELD, needToEquipShield);
@@ -233,19 +270,79 @@ void WorldBotAI::GenerateGear(){
         if (coinChance)
             invSlots = {INVTYPE_WEAPONMAINHAND, INVTYPE_WEAPON};
         else
-            invSlots = {INVTYPE_WEAPON, INVTYPE_WEAPONMAINHAND};
+            invSlots = {INVTYPE_WEAPON, INVTYPE_WEAPON};
 
-        for (auto invSlot: invSlots)
-            if (GenerateInventorySlotItem(itemsPerSlot, invSlot, needToEquipOneHand))
+        for (auto invSlot: invSlots){
+            GenerateInventorySlotItem(itemsPerSlot, invSlot, needToEquipOneHand);
+            if (needToEquipShield)
                 break;
+        }
         
         GenerateInventorySlotItem(itemsPerSlot, INVTYPE_2HWEAPON, needToEquipTwoHand);
+    }
+
+    std::vector<uint32> ridingPets;
+    if (me->GetRace() == RACE_HUMAN){
+        if (me->GetLevel() == 60)
+            ridingPets = {18777, 18778, 18776}; // Swift Brown Steed, Swift White Steed, Swift Palomino
+        else if (me->GetLevel() >= 40)
+            ridingPets = {2411, 5656, 5655, 2414}; // Black Stallion Bridle, Brown Horse Bridle, Chestnut Mare Bridle, Pinto Bridle
+    }
+    else if (me->GetRace() == RACE_DWARF){
+        if (me->GetLevel() == 60)
+            ridingPets = {18786, 18787, 18785};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {5872, 5864, 5873};
+    }
+    else if (me->GetRace() == RACE_GNOME){
+        if (me->GetLevel() == 60)
+            ridingPets = {18772, 18773, 18774};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {8595, 13321, 8563, 13322};
+    }
+    else if (me->GetRace() == RACE_NIGHTELF){
+        if (me->GetLevel() == 60)
+            ridingPets = {18766, 18767, 18902};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {8632, 8631, 8629};
+    }
+    else if (me->GetRace() == RACE_ORC){
+        if (me->GetLevel() == 60)
+            ridingPets = {18796, 18798, 18797};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {5668, 5665, 1132};
+    }
+    else if (me->GetRace() == RACE_TAUREN){
+        if (me->GetLevel() == 60)
+            ridingPets = {18794, 18795, 18793};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {15290, 15277};
+    }
+    else if (me->GetRace() == RACE_UNDEAD){
+        if (me->GetLevel() == 60)
+            ridingPets = {13334, 18791};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {13332, 13333, 13331};
+    }
+    else if (me->GetRace() == RACE_TROLL){
+        if (me->GetLevel() == 60)
+            ridingPets = {18788, 18789, 18790};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {8588, 8591, 8592};
+    }
+
+    if (!ridingPets.empty()){
+        uint32 itemId = SelectRandomContainerElement(ridingPets);
+        Item* pItem = Item::CreateItem(itemId, 1, me->GetObjectGuid());
+        ItemPosCountVec dest;
+        if (me->CanStoreItem(INVENTORY_SLOT_BAG_0, NULL_SLOT, dest, pItem) == EQUIP_ERR_OK)
+            me->StoreItem(dest, pItem, true);
     }
 }
 
 void WorldBotAI::GenerateInventorySlotPermEnchant(Item* pItem){
     if (!pItem)
-    return;
+        return;
     
     float qualityScale = 1.0f;
     uint32 invSlotType = pItem->GetProto()->InventoryType;
@@ -266,13 +363,15 @@ void WorldBotAI::GenerateInventorySlotPermEnchant(Item* pItem){
         enchantName.append("Weapon");
         qualityScale = 0.1f;
     }
-    else if (invSlotType == INVTYPE_2HWEAPON)
+    else if (invSlotType == INVTYPE_2HWEAPON){
         enchantName.append("2H Weapon");
+        qualityScale = 0.1f;
+    }
     else
         return;
         
     
-    float gearQuality = (sPlayerBotMgr.GetWorldBotGearQuality()+frand(-0.2, 0.1)) * qualityScale;
+    float gearQuality = (sPlayerBotMgr.GetWorldBotGearQuality() + frand(-0.2, 0.1)) * qualityScale;
     if (gearQuality < 0.0f)
         gearQuality = 0.0f;
 
@@ -329,12 +428,13 @@ void WorldBotAI::GenerateInventorySlotPermEnchant(Item* pItem){
     pItem->SetEnchantment(PERM_ENCHANTMENT_SLOT, randomEnchantId, 0, 0, me->GetObjectGuid());
 }
 
-bool WorldBotAI::IsRandomEnchantRelevant(std::string suffx){
+bool WorldBotAI::IsRandomEnchantRelevant(std::string suffx) const {
     bool result = false;
 
     switch (me->GetClass()){
         case CLASS_WARRIOR:
-            if (suffx == "of the Bear" || suffx == "of the Tiger" || suffx == "of Strength" || suffx == "of Stamina")
+            if (suffx == "of the Bear" || suffx == "of the Tiger" || suffx == "of Strength" || suffx == "of Stamina" ||
+                suffx == "of Defense" || suffx == "of Critical Strike" || suffx == "of Toughness")
                 result = true;
             break;
         default:
@@ -344,12 +444,14 @@ bool WorldBotAI::IsRandomEnchantRelevant(std::string suffx){
     return result;
 }
 
-bool WorldBotAI::IsItemStatsRelevant(const ItemPrototype* pProto){
+bool WorldBotAI::AreItemStatsRelevant(const ItemPrototype* pProto) const {
     // which aura mods the item applies
     std::bitset<TOTAL_AURAS> auraMods;
 
     // which stats the item modifies
     std::bitset<MAX_ITEM_MOD> itemStats;
+
+    std::bitset<MAX_SPELL_SCHOOL> spellSchools;
 
     bool result = false;
     
@@ -367,22 +469,48 @@ bool WorldBotAI::IsItemStatsRelevant(const ItemPrototype* pProto){
             if (auraIndex < TOTAL_AURAS)
                 auraMods.set(auraIndex);
         }
+
+        spellSchools.set(pSpellEntry->School);
     }
+    
+
+    if (pProto->Quality == ITEM_QUALITY_NORMAL || pProto->InventoryType == INVTYPE_RANGED ||
+                pProto->InventoryType == INVTYPE_RANGEDRIGHT)
+        return true;
 
     switch (me->GetClass()){
         case CLASS_WARRIOR:
             if (
-                pProto->Quality == ITEM_QUALITY_NORMAL ||
+                
                 itemStats[ITEM_MOD_STRENGTH] || 
                 (itemStats[ITEM_MOD_STAMINA] && itemStats[ITEM_MOD_AGILITY]) ||
                 auraMods[SPELL_AURA_MOD_ATTACK_POWER] ||
                 auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_CRIT_CHANCE] ||
-                auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE] ||
-                pProto->InventoryType == INVTYPE_RANGED ||
-                pProto->InventoryType == INVTYPE_RANGEDRIGHT
+                auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE]
             )
                 result = true;
-
+                break;
+        case CLASS_WARLOCK:
+            if ( (itemStats[ITEM_MOD_INTELLECT] ||
+                itemStats[ITEM_MOD_STAMINA]) && !auraMods[SPELL_AURA_MOD_HEALING_DONE] ||
+                (auraMods[SPELL_AURA_MOD_DAMAGE_DONE] && spellSchools[SPELL_SCHOOL_SHADOW])
+            )
+                result = true;
+                break;
+        case CLASS_MAGE:
+            if ( auraMods[SPELL_AURA_MOD_DAMAGE_DONE] ||
+                (itemStats[ITEM_MOD_STAMINA] && itemStats[ITEM_MOD_INTELLECT])
+            )
+                result = true;
+                break;
+        case CLASS_PRIEST:
+            if ( 
+                (itemStats[ITEM_MOD_STAMINA] && itemStats[ITEM_MOD_INTELLECT]) ||
+                (itemStats[ITEM_MOD_SPIRIT] && itemStats[ITEM_MOD_INTELLECT]) ||
+                auraMods[SPELL_AURA_MOD_HEALING]
+            )
+                result = true;
+                break;
         default:
             break;
     }
@@ -473,7 +601,7 @@ bool WorldBotAI::GenerateInventorySlotItem(std::map<uint32 /*slot*/, std::vector
             randomEnchId = enchIds[urand(0, enchIds.size()-1)];
         }
         
-        if (!randomEnchId && !IsItemStatsRelevant(pProto)){
+        if (!randomEnchId && !AreItemStatsRelevant(pProto)){
             isGearSelected = false;
             itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
             continue;
@@ -511,7 +639,7 @@ bool WorldBotAI::GenerateInventorySlotItem(std::map<uint32 /*slot*/, std::vector
             ItemPosCountVec dest;
             uint8 msg = me->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item);
             if (msg == EQUIP_ERR_OK)
-            me->StoreItem(dest, item, true);
+                me->StoreItem(dest, item, true);
         }
         
         itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
@@ -553,6 +681,518 @@ void WorldBotAI::InitTalentsByRandomSpec(){
             uint32 rank = specMap[m_currentSpec][index].second;
             me->LearnTalent(id, rank);
             index++;
+        }
+
+        std::vector<std::string> regexVector {"tank", "protection"};
+        for (auto str: regexVector){
+            std::regex pattern {str};
+            if (std::regex_search(m_currentSpec, pattern)){
+                m_role = ROLE_TANK;
+                return;
+            }
+        }
+        regexVector.clear();
+
+        regexVector = {"arms", "fury"};
+        for (auto str: regexVector){
+            std::regex pattern {str};
+            if (std::regex_search(m_currentSpec, pattern)){
+                m_role = ROLE_MELEE_DPS;
+                return;
+            }
+        }
+    }
+}
+
+void WorldBotAI::PopulateProffessionSpells() {
+    std::vector<uint32> skillVector {SKILL_MINING, SKILL_SKINNING, SKILL_HERBALISM};
+    uint32 gatherSkillId = SelectRandomContainerElement(skillVector);
+    SkillLineAbilityMapBounds skillMapBounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySkillId(gatherSkillId);
+    // uint32 spellsCount = 0;
+    std::vector<uint32> spellVector;
+    for (auto it = skillMapBounds.first; it != skillMapBounds.second; ++it){
+        spellVector.push_back(it->second->spellId);
+        // spellsCount++;
+    }
+    if (spellVector.size()){
+        uint32 skillLevel = me->GetLevel() * 5 + urand(5, 25);
+        float normalizedLevel = skillLevel / 300.0f;
+        if (normalizedLevel > 1.0f)
+            normalizedLevel = 1.0f;
+    
+        uint32 maxIndex = static_cast<uint32>(std::round(normalizedLevel * (spellVector.size() - 1)));
+        for (uint32 i=0; i != maxIndex; ++i){
+            me->LearnSpell(spellVector[i], false);
+            m_proffessionBook.push_back(sSpellMgr.GetSpellEntry(spellVector[i]));
+        }
+    }
+
+    spellVector.clear();
+    skillVector.clear();
+
+    uint32 skillId = SKILL_NONE;
+    switch (gatherSkillId){
+        case SKILL_MINING:
+        {
+            skillVector = {SKILL_ENGINEERING, SKILL_BLACKSMITHING, SKILL_ENCHANTING};
+            break;
+        }
+        case SKILL_HERBALISM:
+        {
+            // increased probability for alchemy
+            skillVector = {SKILL_ALCHEMY, SKILL_ALCHEMY, SKILL_ENCHANTING};
+            break;
+        }
+        case SKILL_SKINNING:
+        {
+            // increased probability for leatherworking
+            skillVector = {SKILL_LEATHERWORKING, SKILL_LEATHERWORKING, SKILL_ENCHANTING};
+            break;
+        }
+        default:
+            // nonsense
+            return;
+    }
+    
+    skillId = SelectRandomContainerElement(skillVector);
+    skillMapBounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySkillId(skillId);
+    
+    for (auto it = skillMapBounds.first; it != skillMapBounds.second; ++it){
+        spellVector.push_back(it->second->spellId);
+    }
+
+    if (spellVector.size()){
+        uint32 skillLevel = me->GetLevel() * 5 + urand(5, 25);
+        float normalizedLevel = skillLevel / 300.0f;
+        if (normalizedLevel > 1.0f)
+            normalizedLevel = 1.0f;
+    
+        uint32 maxIndex = static_cast<uint32>(std::round(normalizedLevel * (spellVector.size() - 1)));
+        for (uint32 i=0; i != maxIndex; ++i){
+            me->LearnSpell(spellVector[i], false);
+            m_proffessionBook.push_back(sSpellMgr.GetSpellEntry(spellVector[i]));
+        }
+    }
+}
+
+void WorldBotAI::AddItemToInventory(uint32 itemId, uint32 count)
+{
+    ItemPosCountVec dest;
+    uint8 msg = me->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, count);
+    if (msg == EQUIP_ERR_OK)
+    {
+        if (Item* pItem = me->StoreNewItem(dest, itemId, true, Item::GenerateItemRandomPropertyId(itemId)))
+            pItem->SetCount(count);
+    }
+}
+
+bool WorldBotAI::UseItemEffect(Item* pItem)
+{
+    ItemPrototype const* pProto = pItem->GetProto();
+    for (auto const& itr : pProto->Spells)
+    {
+        if (itr.SpellId && itr.SpellTrigger == ITEM_SPELLTRIGGER_ON_USE)
+        {
+            if (SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(itr.SpellId))
+            {
+                if (me->IsSpellReady(*pSpellEntry, pProto))
+                {
+                    if (pSpellEntry->IsPositiveSpell())
+                        return me->CastSpell(me, pSpellEntry, false, pItem) == SPELL_CAST_OK;
+                    else if (me->GetVictim())
+                        return me->CastSpell(me->GetVictim(), pSpellEntry, false, pItem) == SPELL_CAST_OK;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+bool WorldBotAI::CanTryToCastSpell(Unit const* pTarget, SpellEntry const* pSpellEntry) const{
+
+    if (!me->IsSpellReady(pSpellEntry->Id))
+        return false;
+
+    if (me->HasGCD(pSpellEntry))
+        return false;
+
+    if (pSpellEntry->TargetAuraState &&
+       !pTarget->HasAuraState(AuraState(pSpellEntry->TargetAuraState)))
+        return false;
+
+    if (pSpellEntry->CasterAuraState &&
+        !me->HasAuraState(AuraState(pSpellEntry->CasterAuraState)))
+        return false;
+
+    uint32 const powerCost = Spell::CalculatePowerCost(pSpellEntry, me);
+    Powers const powerType = Powers(pSpellEntry->powerType);
+
+    if (powerType == POWER_HEALTH)
+    {
+        if (me->GetHealth() <= powerCost)
+            return false;
+        return true;
+    }
+
+    if (me->GetPower(powerType) < powerCost)
+        return false;
+
+    if (pTarget->IsImmuneToSpell(pSpellEntry, false))
+        return false;
+
+    if (pSpellEntry->GetErrorAtShapeshiftedCast(me->GetShapeshiftForm()) != SPELL_CAST_OK)
+        return false;
+
+    if (pSpellEntry->IsSpellAppliesAura() && pTarget->HasAura(pSpellEntry->Id))
+        return false;
+
+    SpellRangeEntry const* srange = sSpellRangeStore.LookupEntry(pSpellEntry->rangeIndex);
+    if (me != pTarget && pSpellEntry->EffectImplicitTargetA[0] != TARGET_UNIT_CASTER)
+    {
+        float const dist = me->GetCombatDistance(pTarget);
+
+        if (dist > srange->maxRange)
+            return false;
+        if (srange->minRange && dist < srange->minRange)
+            return false;
+    }
+
+    return true;
+}
+
+SpellCastResult WorldBotAI::DoCastSpell(Unit* pTarget, SpellEntry const* pSpellEntry){
+
+    if (me != pTarget)
+        me->SetFacingToObject(pTarget);
+
+    if (me->IsMounted())
+        me->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+    me->SetTargetGuid(pTarget->GetObjectGuid());
+    auto result = me->CastSpell(pTarget, pSpellEntry, false);
+
+    //printf("cast %s result %u\n", pSpellEntry->SpellName[0].c_str(), result);
+
+    if ((result == SPELL_FAILED_MOVING ||
+        result == SPELL_CAST_OK) &&
+        (pSpellEntry->GetCastTime(me) > 0) &&
+        (me->IsMoving() || !me->IsStopped()))
+        me->StopMoving();
+
+    if ((result == SPELL_FAILED_NEED_AMMO_POUCH ||
+        result == SPELL_FAILED_ITEM_NOT_READY) &&
+        pSpellEntry->Reagent[0])
+    {
+        if (Item* pItem = me->GetItemByPos(INVENTORY_SLOT_BAG_0, INVENTORY_SLOT_ITEM_START))
+            me->DestroyItem(INVENTORY_SLOT_BAG_0, INVENTORY_SLOT_ITEM_START, true);
+
+        AddItemToInventory(pSpellEntry->Reagent[0]);
+    }
+
+    return result;
+}
+
+bool WorldBotAI::IsInDuel() const
+{
+    return me->m_duel && me->m_duel->startTime != 0;
+}
+
+bool WorldBotAI::IsValidHostileTarget(Unit const* pTarget) const{
+    return me->IsValidAttackTarget(pTarget) &&
+           pTarget->IsVisibleForOrDetect(me, me, false) &&
+           !pTarget->HasBreakableByDamageCrowdControlAura() &&
+           !pTarget->IsTotalImmune() &&
+           pTarget->GetTransport() == me->GetTransport();
+}
+
+Unit* WorldBotAI::SelectPartyAttackTarget() const {
+    Group* pGroup = me->GetGroup();
+    std::map<uint32, Unit*> attackersMap;
+    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+    {
+        if (Player* pMember = itr->getSource())
+        {
+            // We already checked self.
+            if (pMember == me)
+                continue;
+
+            for (const auto pAttacker : pMember->GetAttackers())
+            {
+                if (IsValidHostileTarget(pAttacker) &&
+                    me->IsWithinDist(pAttacker, 50.0f))
+                    return pAttacker;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+void WorldBotAI::UseMount(){
+    uint32 petSpell = 0;
+    if (m_class == CLASS_PALADIN){
+        if (m_level >= 60)
+            petSpell = 23214;
+        else if (m_level >= 40)
+            petSpell = 13819;
+    }
+    else if (m_class == CLASS_WARLOCK){
+        if (m_level >= 60)
+            petSpell = 23161;
+        else if (m_level >= 40)
+            petSpell = 5784;
+    }
+
+    if (petSpell){
+        if (me->CastSpell(me, petSpell, false) == SPELL_CAST_OK)
+            return;
+    }
+    else if (m_ridingPet){
+        UseItemEffect(m_ridingPet);
+    }
+}
+
+bool WorldBotAI::AttackStart(Unit* pVictim)
+{
+    if (me->IsMounted())
+        me->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+    if (me->Attack(pVictim, true))
+    {
+        if (m_role == ROLE_RANGE_DPS &&
+            me->GetPowerPercent(POWER_MANA) > 10.0f &&
+            me->GetCombatDistance(pVictim) > 8.0f)
+            me->SetCasterChaseDistance(25.0f);
+        else if (me->HasDistanceCasterMovement())
+            me->SetCasterChaseDistance(0.0f);
+
+        me->GetMotionMaster()->MoveChase(pVictim, 1.0f, m_role == ROLE_MELEE_DPS ? 3.0f : 0.0f);
+        return true;
+    }
+
+    return false;
+}
+
+Unit* WorldBotAI::SelectAttackTarget(Player* pLeader) const
+{
+    if (IsInDuel())
+    {
+        if (me->m_duel->opponent && IsValidHostileTarget(me->m_duel->opponent))
+            return me->m_duel->opponent;
+    }
+    else
+    {
+        // Stick to marked target in combat.
+        if (me->IsInCombat() || pLeader->GetVictim())
+        {
+            for (auto markId : m_marksToFocus)
+            {
+                ObjectGuid targetGuid = me->GetGroup()->GetTargetWithIcon(markId);
+                if (targetGuid.IsUnit())
+                    if (Unit* pVictim = me->GetMap()->GetUnit(targetGuid))
+                        if (IsValidHostileTarget(pVictim))
+                            return pVictim;
+            }
+        }
+
+        // Who is the leader attacking.
+        if (Unit* pVictim = pLeader->GetVictim())
+        {
+            if (IsValidHostileTarget(pVictim))
+                return pVictim;
+        }
+    }
+
+    // Who is attacking me.
+    for (const auto pAttacker : me->GetAttackers())
+    {
+        if (IsValidHostileTarget(pAttacker))
+            return pAttacker;
+    }
+
+    if (!IsInDuel())
+    {
+        // Check if other group members are under attack.
+        if (Unit* pPartyAttacker = SelectPartyAttackTarget())
+            return pPartyAttacker;
+    }
+
+    // Assist pet if its in combat.
+    if (Pet* pPet = me->GetPet())
+    {
+        if (Unit* pPetAttacker = pPet->GetAttackerForHelper())
+            if (IsValidHostileTarget(pPetAttacker))
+                return pPetAttacker;
+    }
+
+    return nullptr;
+}
+
+void WorldBotAI::UpdateMovements(){
+    if (m_leader)
+        FollowLeader();
+}
+
+void WorldBotAI::FollowLeader(){
+    if (!m_leader){
+        m_leader = nullptr;
+        return;
+    }
+    
+    Group* group = me->GetGroup();
+    if (!group){
+        m_leader = nullptr;
+        return;
+    }
+
+    if (!m_leader->IsInWorld())
+        return;
+
+    float x, y, z;
+    uint32 excludeSteepSlopes = 0;
+
+    if (me->GetDistance(m_leader) <= 7.0f){
+        if (me->GetMotionMaster()->GetCurrentMovementGeneratorType())
+            me->StopMoving();
+        return;
+    }
+
+    float angle = linlin(frand(0.0f, M_PI/3), 0.0f, M_PI/3,
+        m_leader->GetOrientation()-7*M_PI/6,
+        m_leader->GetOrientation()-5*M_PI/6);
+    m_leader->GetNearPoint(m_leader, x, y, z, 0, 5.0f, angle);
+
+    if (m_leader->GetPositionZ() - me->GetPositionZ() > 3.0f)
+        excludeSteepSlopes = MOVE_EXCLUDE_STEEP_SLOPES;
+
+
+    me->GetMotionMaster()->MovePoint(0, x, y, z, MOVE_PATHFINDING | excludeSteepSlopes);
+}
+
+void WorldBotAI::TravelToTarget(Unit* pTarget){
+
+}
+
+void WorldBotAI::TravelToPoint(uint32 mapId, Position pos){
+    
+}
+
+Player* WorldBotAI::GetPartyLeader() const
+{
+    Group* pGroup = me->GetGroup();
+    if (!pGroup)
+        return nullptr;
+
+    if (Player* originalLeader = ObjectAccessor::FindPlayerNotInWorld(m_leader->GetObjectGuid()))
+    {
+        if (me->InBattleGround() == originalLeader->InBattleGround())
+        {
+            // In case the original spawner is not in the same group as the bots anymore.
+            if (pGroup != originalLeader->GetGroup())
+                return nullptr;
+
+            // In case the current leader is the bot itself and it's not inside a Battleground.
+            ObjectGuid currentLeaderGuid = pGroup->GetLeaderGuid();
+            if (currentLeaderGuid == me->GetObjectGuid() && !me->InBattleGround())
+                return nullptr;
+        }
+
+        return originalLeader;
+    }
+    return nullptr;
+}
+
+Unit* WorldBotAI::GetMarkedTarget(RaidTargetIcon mark) const{
+    ObjectGuid targetGuid = me->GetGroup()->GetTargetWithIcon(mark);
+    if (targetGuid.IsUnit())
+        return me->GetMap()->GetUnit(targetGuid);
+
+    return nullptr;
+}
+
+bool WorldBotAI::AreOthersOnSameTarget(ObjectGuid guid, bool checkMelee, bool checkSpells) const
+{
+    Group* pGroup = me->GetGroup();
+    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
+    {
+        if (Player* pMember = itr->getSource())
+        {
+            // Not self.
+            if (pMember == me)
+                continue;
+
+            // Not the target itself.
+            if (pMember->GetObjectGuid() == guid)
+                continue;
+
+            if (pMember->GetTargetGuid() == guid)
+            {
+                if (checkMelee && pMember->HasUnitState(UNIT_STATE_MELEE_ATTACKING))
+                    return true;
+
+                if (checkSpells && pMember->IsNonMeleeSpellCasted())
+                    return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool WorldBotAI::CanUseCrowdControl(SpellEntry const* pSpellEntry, Unit* pTarget) const
+{
+    if (IsInDuel())
+        return true;
+
+    if (pSpellEntry->HasAuraInterruptFlag(AURA_INTERRUPT_DAMAGE_CANCELS) &&
+        AreOthersOnSameTarget(pTarget->GetObjectGuid()))
+        return false;
+
+    if (pSpellEntry->HasSingleTargetAura())
+    {
+        auto const& singleAuras = me->GetSingleCastSpellTargets();
+        if (singleAuras.find(pSpellEntry) != singleAuras.end())
+            return false;
+    }
+
+    return true;
+}
+
+void WorldBotAI::UpdateOutOfCombatAI() {
+    if (m_level >= 40 && me->IsOutdoorOnTransport() && !me->IsMounted())
+        UseMount();
+
+    if (m_class == CLASS_WARRIOR)
+        UpdateOutOfCombatWarrior();
+}
+
+void WorldBotAI::UpdateOutOfCombatWarrior(){
+
+    if (!m_spellBook["Battle Stance"].empty() && CanTryToCastSpell(me, m_spellBook["Battle Stance"].back())){
+        if (DoCastSpell(me, m_spellBook["Battle Stance"].back()) == SPELL_CAST_OK)
+            return;
+    }
+
+    if (!m_spellBook["Battle Shout"].empty() &&
+       !me->HasAura(m_spellBook["Battle Shout"].back()->Id))
+    {
+        const SpellEntry* pSpellEntry = m_spellBook["Battle Shout"].back();
+        if (CanTryToCastSpell(me, pSpellEntry))
+            DoCastSpell(me, pSpellEntry);
+        else if (!m_spellBook["Bloodrage"].empty() &&
+            (me->GetPower(POWER_RAGE) < 10) &&
+            CanTryToCastSpell(me, m_spellBook["Bloodrage"].back()))
+        {
+            DoCastSpell(me, m_spellBook["Bloodrage"].back());
+        }
+    }
+
+    if (Unit* pVictim = me->GetVictim())
+    {
+        if (!m_spellBook["Charge"].empty() &&
+            CanTryToCastSpell(pVictim, m_spellBook["Charge"].back()))
+        {
+            if (DoCastSpell(pVictim, m_spellBook["Charge"].back()) == SPELL_CAST_OK)
+                return;
         }
     }
 }

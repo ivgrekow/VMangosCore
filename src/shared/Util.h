@@ -454,4 +454,6 @@ inline float InterpolateValueAtIndex(float startIndex, float startValue, float e
 
 std::vector<std::string> SplitStringByDelimiter(std::string const& str, char delimiter);
 
+float linlin(float num, float source_left, float source_right, float target_left, float target_right);
+
 #endif

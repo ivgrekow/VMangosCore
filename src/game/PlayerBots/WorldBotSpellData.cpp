@@ -304,6 +304,10 @@ void WorldBotAI::PopulateSpellData(){
                     m_spellBook.insert({ "Shoot Crossbow", vec });
                 }
             }
+            
+            // Dual Wield
+            if (me->GetLevel() >= 20) // warriors can learn it at this level
+                me->LearnSpell(674, false);
 
             // Parry
             if (me->GetLevel() >= 6)
@@ -1049,4 +1053,6 @@ void WorldBotAI::PopulateSpellData(){
             break;
         }
     }
+
+    PopulateProffessionSpells();
 }
