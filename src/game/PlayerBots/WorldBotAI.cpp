@@ -16,22 +16,18 @@ void WorldBotAI::UpdateAI(uint32 const diff){
         if (m_level)
             me->GiveLevel(m_level);
         InitTalentsByRandomSpec();
-        PopulateSpellData();
         // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::UpdateAI : Talents are initialized.");
+        PopulateSpellData();
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::UpdateAI : Spells are populated.");
         me->SetUInt32Value(PLAYER_XP, 0);
         GenerateGear();
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::UpdateAI : Gear has been generated.");
+        GenerateMounts();
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::UpdateAI : Mounts are generated.");
         m_isInitialized = true;
         me->SetVisibility(VISIBILITY_ON);
     }
 
-    // if (!m_movementTimer.Passed())
-    //     m_movementTimer.Update(diff);
-    // else{
-    //     // me->GetMotionMaster()->MovePoint(0, m_leader->GetPositionX(), m_leader->GetPositionX(),
-    //     //     m_leader->GetPositionZ(), MOVE_EXCLUDE_STEEP_SLOPES);
-    //     m_movementTimer.Reset(WB_UPDATE_MOVEMENT_INTERVAL);
-    //     UpdateMovements();
-    // }
     UpdateMovements();
 
     UpdateOutOfCombatAI();
@@ -281,63 +277,11 @@ void WorldBotAI::GenerateGear(){
         GenerateInventorySlotItem(itemsPerSlot, INVTYPE_2HWEAPON, needToEquipTwoHand);
     }
 
-    std::vector<uint32> ridingPets;
-    if (me->GetRace() == RACE_HUMAN){
-        if (me->GetLevel() == 60)
-            ridingPets = {18777, 18778, 18776}; // Swift Brown Steed, Swift White Steed, Swift Palomino
-        else if (me->GetLevel() >= 40)
-            ridingPets = {2411, 5656, 5655, 2414}; // Black Stallion Bridle, Brown Horse Bridle, Chestnut Mare Bridle, Pinto Bridle
-    }
-    else if (me->GetRace() == RACE_DWARF){
-        if (me->GetLevel() == 60)
-            ridingPets = {18786, 18787, 18785};
-        else if (me->GetLevel() >= 40)
-            ridingPets = {5872, 5864, 5873};
-    }
-    else if (me->GetRace() == RACE_GNOME){
-        if (me->GetLevel() == 60)
-            ridingPets = {18772, 18773, 18774};
-        else if (me->GetLevel() >= 40)
-            ridingPets = {8595, 13321, 8563, 13322};
-    }
-    else if (me->GetRace() == RACE_NIGHTELF){
-        if (me->GetLevel() == 60)
-            ridingPets = {18766, 18767, 18902};
-        else if (me->GetLevel() >= 40)
-            ridingPets = {8632, 8631, 8629};
-    }
-    else if (me->GetRace() == RACE_ORC){
-        if (me->GetLevel() == 60)
-            ridingPets = {18796, 18798, 18797};
-        else if (me->GetLevel() >= 40)
-            ridingPets = {5668, 5665, 1132};
-    }
-    else if (me->GetRace() == RACE_TAUREN){
-        if (me->GetLevel() == 60)
-            ridingPets = {18794, 18795, 18793};
-        else if (me->GetLevel() >= 40)
-            ridingPets = {15290, 15277};
-    }
-    else if (me->GetRace() == RACE_UNDEAD){
-        if (me->GetLevel() == 60)
-            ridingPets = {13334, 18791};
-        else if (me->GetLevel() >= 40)
-            ridingPets = {13332, 13333, 13331};
-    }
-    else if (me->GetRace() == RACE_TROLL){
-        if (me->GetLevel() == 60)
-            ridingPets = {18788, 18789, 18790};
-        else if (me->GetLevel() >= 40)
-            ridingPets = {8588, 8591, 8592};
-    }
+    
 
-    if (!ridingPets.empty()){
-        uint32 itemId = SelectRandomContainerElement(ridingPets);
-        Item* pItem = Item::CreateItem(itemId, 1, me->GetObjectGuid());
-        ItemPosCountVec dest;
-        if (me->CanStoreItem(INVENTORY_SLOT_BAG_0, NULL_SLOT, dest, pItem) == EQUIP_ERR_OK)
-            me->StoreItem(dest, pItem, true);
-    }
+    GenerateBags();
+    // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::UpdateAI : Bags are generated.");
+    AddRangedWeaponAmmo();
 }
 
 void WorldBotAI::GenerateInventorySlotPermEnchant(Item* pItem){
@@ -659,6 +603,116 @@ bool WorldBotAI::GenerateInventorySlotItem(std::map<uint32 /*slot*/, std::vector
     return isGearSelected;
 }
 
+void WorldBotAI::GenerateBags(){
+    uint32 bagId = 4500; // Traveler's Backpack id
+    
+    // add only 3 bags firstly
+    for (uint16 slot = INVENTORY_SLOT_BAG_START; slot != INVENTORY_SLOT_BAG_END - 1; ++slot){
+        Item* pBag = Item::CreateItem(bagId, 1, me->GetObjectGuid());
+        
+        if (Item* pItem = me->EquipItem(slot, pBag, true))
+        {
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Equipped bag into slot %d with item guid (#%d).", slot, pItem->GetProto()->ItemId);
+        }
+        else
+        {
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Bot DIDN'T equip the bag.");
+        }
+    }
+
+    if (m_class == CLASS_WARRIOR){
+        Item* pItem = me->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
+        if (pItem)
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI] : ranged weapon equipped \"%s\"", pItem->GetProto()->Name1);
+        else{
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "WorldBotAI::GenerateBags : no ranged weapon found.");
+            return;
+        }
+
+        std::vector<uint32> ammoBags;
+
+        if (pItem->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_BOW || pItem->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_CROSSBOW)
+            // Ancient Sinew Wrapped Lamina, Harpy Hide Quiver, Quickdraw Quiver, Heavy Quiver, Medium Quiver, Small Quiver
+            ammoBags = {18714, 19319, 8217, 7371, 11362, 5439};
+        else if (pItem->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_GUN)
+            // Gnoll Skin Bandolier, Thick Leather Ammo Pouch, Heavy Leather Ammo Pouch, Medium Shot Pouch, Small Shot Pouch
+            ammoBags = {19320, 8218, 7372, 11363, 5441};
+
+
+        uint32 ammoBagId = 0;
+        for (uint32 id: ammoBags){
+            const ItemPrototype* pProto = sObjectMgr.GetItemPrototype(id);
+            if (!pProto)
+                continue;
+
+            if (m_level >= pProto->RequiredLevel){
+                ammoBagId = pProto->ItemId;
+                break;
+            }
+        }
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Selected ammo bag id = %d.", ammoBagId);
+
+        Item* pAmmoBag = Item::CreateItem(ammoBagId, 1, me->GetObjectGuid());
+        if (pAmmoBag){
+            if (!me->EquipItem(INVENTORY_SLOT_BAG_END-1, pAmmoBag, true))
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Bot #%d can't equip ammo bag.", me->GetGUIDLow());
+            else
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Bot #%d equipped ammo bag \"%s\".", me->GetGUIDLow(), pAmmoBag->GetProto()->Name1);
+        }
+        else
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Can't create item.");
+    }
+    else{
+        Item* pBag = Item::CreateItem(bagId, 1, me->GetObjectGuid());
+        if (!pBag){
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Error creating item #%d.", bagId);
+            return;
+        }
+
+        if (!me->EquipItem(INVENTORY_SLOT_BAG_END-1, pBag, true)){
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Bot %d error equiping item #%d", me->GetGUIDLow(), pBag->GetProto()->ItemId);
+            return;
+        }
+    }
+}
+
+void WorldBotAI::AddAllSpellReagents(){
+    for (auto itr = m_spellBook.begin(); itr != m_spellBook.end(); itr++){
+        for (const auto& pSpell : itr->second)
+        {
+            if (pSpell)
+            {
+                for (const auto& reagent : pSpell->Reagent)
+                {
+                    if (reagent && !me->HasItemCount(reagent, 1))
+                        AddItemToInventory(reagent);
+                }
+                for (const auto& totem : pSpell->Totem)
+                {
+                    if (totem && !me->HasItemCount(totem, 1))
+                        AddItemToInventory(totem);
+                }
+            }
+        }
+    }
+
+    for (const auto& pSpell: m_proffessionBook){
+        if (!pSpell)
+            continue;
+
+        for (const auto& reagent : pSpell->Reagent)
+        {
+            if (reagent && !me->HasItemCount(reagent, 1))
+                AddItemToInventory(reagent);
+        }
+        for (const auto& totem : pSpell->Totem)
+        {
+            if (totem && !me->HasItemCount(totem, 1))
+                AddItemToInventory(totem);
+        }
+    }
+}
+
 void WorldBotAI::InitTalentsByRandomSpec(){
     std::unordered_map<std::string, std::vector<std::pair<uint32, uint32>>> specMap;
     std::vector<std::string> specNames;
@@ -727,7 +781,6 @@ void WorldBotAI::PopulateProffessionSpells() {
         }
     }
 
-    spellVector.clear();
     skillVector.clear();
 
     uint32 skillId = SKILL_NONE;
@@ -928,6 +981,104 @@ Unit* WorldBotAI::SelectPartyAttackTarget() const {
     return nullptr;
 }
 
+void WorldBotAI::GenerateMounts(){
+    std::vector<uint32> ridingPets;
+    if (me->GetRace() == RACE_HUMAN){
+        if (me->GetLevel() == 60)
+            ridingPets = {18777, 18778, 18776}; // Swift Brown Steed, Swift White Steed, Swift Palomino
+        else if (me->GetLevel() >= 40)
+            ridingPets = {2411, 5656, 5655, 2414}; // Black Stallion Bridle, Brown Horse Bridle, Chestnut Mare Bridle, Pinto Bridle
+    }
+    else if (me->GetRace() == RACE_DWARF){
+        if (me->GetLevel() == 60)
+            ridingPets = {18786, 18787, 18785};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {5872, 5864, 5873};
+    }
+    else if (me->GetRace() == RACE_GNOME){
+        if (me->GetLevel() == 60)
+            ridingPets = {18772, 18773, 18774};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {8595, 13321, 8563, 13322};
+    }
+    else if (me->GetRace() == RACE_NIGHTELF){
+        if (me->GetLevel() == 60)
+            ridingPets = {18766, 18767, 18902};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {8632, 8631, 8629};
+    }
+    else if (me->GetRace() == RACE_ORC){
+        if (me->GetLevel() == 60)
+            ridingPets = {18796, 18798, 18797};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {5668, 5665, 1132};
+    }
+    else if (me->GetRace() == RACE_TAUREN){
+        if (me->GetLevel() == 60)
+            ridingPets = {18794, 18795, 18793};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {15290, 15277};
+    }
+    else if (me->GetRace() == RACE_UNDEAD){
+        if (me->GetLevel() == 60)
+            ridingPets = {13334, 18791};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {13332, 13333, 13331};
+    }
+    else if (me->GetRace() == RACE_TROLL){
+        if (me->GetLevel() == 60)
+            ridingPets = {18788, 18789, 18790};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {8588, 8591, 8592};
+    }
+
+    if (!ridingPets.empty()){
+        uint32 itemId = SelectRandomContainerElement(ridingPets);
+        Item* pItem = Item::CreateItem(itemId, 1, me->GetObjectGuid());
+        if (!pItem){
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "WorldBotAI::GenerateMounts : can't create item #%d.", itemId);
+            return;
+        }
+        ItemPosCountVec dest;
+        if (me->CanStoreItem(INVENTORY_SLOT_BAG_0, NULL_SLOT, dest, pItem) == EQUIP_ERR_OK)
+            me->StoreItem(dest, pItem, true);
+        else {
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "WorldBotAI::GenerateMounts : can't store item with guid %d.", pItem->GetGUIDLow());
+            return;
+        }
+        m_ridingPet = pItem;
+    }
+}
+
+void WorldBotAI::AddRangedWeaponAmmo(){
+    Item* pRangedWeapon = me->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
+    if (!pRangedWeapon)
+        return;
+
+    std::vector<uint32> ammos;
+    if (pRangedWeapon->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_CROSSBOW ||
+        pRangedWeapon->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_BOW)
+        // Thorium Headed Arrow, Jagged Arrow, Precision Arrow, Razor Arrow, Sharp Arrow, Rough Arrow
+        ammos = {18042, 11285, 9399, 3030, 2515, 2512};
+    else if (pRangedWeapon->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_GUN)
+        // Thorium Shells, Mithril Gyro-Shot, Accurate Slugs, High-Impact Mithril Slugs, Crafted Solid Shot, Solid Shot, Heavy Shot, Light Shot
+        ammos = {15997, 10513, 11284, 10512, 8069, 3033, 2519, 2516};
+
+    const ItemPrototype* pProto;
+    for (uint32 id: ammos){
+        pProto = sObjectMgr.GetItemPrototype(id);
+        if (!pProto)
+            continue;
+
+        if (m_level >= pProto->RequiredLevel){
+            break;
+        }
+    }
+    
+    AddItemToInventory(pProto->ItemId, pProto->GetMaxStackSize());
+    me->SetAmmo(pProto->ItemId);
+}
+
 void WorldBotAI::UseMount(){
     uint32 petSpell = 0;
     if (m_class == CLASS_PALADIN){
@@ -1029,8 +1180,18 @@ Unit* WorldBotAI::SelectAttackTarget(Player* pLeader) const
 }
 
 void WorldBotAI::UpdateMovements(){
-    if (m_leader)
+    if (m_leader){
+        if (!m_leader->IsMounted() && me->GetDistance2d(m_leader->GetPosition()) <= 10.0f)
+            me->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+
+        if (me->GetDistance2d(m_leader) >= 25.0f && !me->IsMounted()){
+            UseMount();
+            return;
+        }
+
         FollowLeader();
+    }
+
 }
 
 void WorldBotAI::FollowLeader(){
@@ -1158,8 +1319,6 @@ bool WorldBotAI::CanUseCrowdControl(SpellEntry const* pSpellEntry, Unit* pTarget
 }
 
 void WorldBotAI::UpdateOutOfCombatAI() {
-    if (m_level >= 40 && me->IsOutdoorOnTransport() && !me->IsMounted())
-        UseMount();
 
     if (m_class == CLASS_WARRIOR)
         UpdateOutOfCombatWarrior();

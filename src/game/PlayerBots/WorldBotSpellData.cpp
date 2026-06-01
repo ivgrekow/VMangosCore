@@ -1,43 +1,43 @@
 #include "WorldBotAI.h"
 
 void WorldBotAI::PopulateSpellData(){
-    uint32 myclass = me->GetClass();
-    uint32 myrace = me->GetRace();
+    uint32 m_class = me->GetClass();
+    uint32 m_race = me->GetRace();
 
     std::vector<const SpellEntry*> actualSpells;
     std::string spellName;
     std::vector<uint32> spellCandidates;
 
     uint32 spellFoodGUID = 1131;
-    if (me->GetLevel() < 5)
+    if (m_level < 5)
         spellFoodGUID = 433;
-    else if (me->GetLevel() < 15)
+    else if (m_level < 15)
         spellFoodGUID = 434;
-    else if (me->GetLevel() < 25)
+    else if (m_level < 25)
         spellFoodGUID = 435;
-    else if (me->GetLevel() < 35)
+    else if (m_level < 35)
         spellFoodGUID = 1127;
-    else if (me->GetLevel() < 45)
+    else if (m_level < 45)
         spellFoodGUID = 1129;
-    else if (me->GetLevel() < 55)
+    else if (m_level < 55)
         spellFoodGUID = 1131;
-    else if (me->GetLevel() <= 60)
+    else if (m_level <= 60)
         spellFoodGUID = 25695;
 
     uint32 spellDrinkGUID = 1137;
-    if (me->GetLevel() < 5)
+    if (m_level < 5)
         spellDrinkGUID = 430;
-    else if (me->GetLevel() < 15)
+    else if (m_level < 15)
         spellDrinkGUID = 431;
-    else if (me->GetLevel() < 25)
+    else if (m_level < 25)
         spellDrinkGUID = 432;
-    else if (me->GetLevel() < 35)
+    else if (m_level < 35)
         spellDrinkGUID = 1133;
-    else if (me->GetLevel() < 45)
+    else if (m_level < 45)
         spellDrinkGUID = 1135;
-    else if (me->GetLevel() < 55)
+    else if (m_level < 55)
         spellDrinkGUID = 1137;
-    else if (me->GetLevel() <= 60)
+    else if (m_level <= 60)
         spellDrinkGUID = 25696;
 
     m_spellBook.insert({ "Eat (consumable)", std::vector<const SpellEntry*>{sSpellMgr.GetSpellEntry(spellFoodGUID)} });
@@ -45,7 +45,7 @@ void WorldBotAI::PopulateSpellData(){
 
     actualSpells.clear();
 
-    switch(myrace)
+    switch(m_race)
     {
         case RACE_HUMAN:
         {
@@ -59,7 +59,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -80,7 +80,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -101,7 +101,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -122,7 +122,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -143,7 +143,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -164,7 +164,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -184,7 +184,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -205,7 +205,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -226,7 +226,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -239,11 +239,11 @@ void WorldBotAI::PopulateSpellData(){
 
     actualSpells.clear();
 
-    switch (myclass){
+    switch (m_class){
         case CLASS_WARRIOR:
         {
             // Weapon skills (all weapons except for wands)
-            if (me->GetLevel() >= 10)
+            if (m_level >= 10)
             {
                 if (!me->HasSpell(264)) // Bows
                     me->LearnSpell(264, false);
@@ -306,11 +306,11 @@ void WorldBotAI::PopulateSpellData(){
             }
             
             // Dual Wield
-            if (me->GetLevel() >= 20) // warriors can learn it at this level
+            if (m_level >= 20) // warriors can learn it at this level
                 me->LearnSpell(674, false);
 
             // Parry
-            if (me->GetLevel() >= 6)
+            if (m_level >= 6)
                 me->LearnSpell(3127, false);
 
             // Heroic Strike
@@ -324,7 +324,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -343,7 +343,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -362,7 +362,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -381,7 +381,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -400,7 +400,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -419,7 +419,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -438,7 +438,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -457,7 +457,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -476,7 +476,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -497,7 +497,7 @@ void WorldBotAI::PopulateSpellData(){
                     if (!pSpellEntry)
                         continue;
 
-                    if (me->GetLevel() >= pSpellEntry->spellLevel)
+                    if (m_level >= pSpellEntry->spellLevel)
                     {
                         me->LearnSpell(spellId, false);
                         actualSpells.push_back(pSpellEntry);
@@ -519,7 +519,7 @@ void WorldBotAI::PopulateSpellData(){
                     if (!pSpellEntry)
                         continue;
 
-                    if (me->GetLevel() >= pSpellEntry->spellLevel)
+                    if (m_level >= pSpellEntry->spellLevel)
                     {
                         me->LearnSpell(spellId, false);
                         actualSpells.push_back(pSpellEntry);
@@ -539,7 +539,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -558,7 +558,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -577,7 +577,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -596,7 +596,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -615,7 +615,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -634,7 +634,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -653,7 +653,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -672,7 +672,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -691,7 +691,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -710,7 +710,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -731,7 +731,7 @@ void WorldBotAI::PopulateSpellData(){
                     if (!pSpellEntry)
                         continue;
 
-                    if (me->GetLevel() >= pSpellEntry->spellLevel)
+                    if (m_level >= pSpellEntry->spellLevel)
                     {
                         me->LearnSpell(spellId, false);
                         actualSpells.push_back(pSpellEntry);
@@ -753,7 +753,7 @@ void WorldBotAI::PopulateSpellData(){
                     if (!pSpellEntry)
                         continue;
 
-                    if (me->GetLevel() >= pSpellEntry->spellLevel)
+                    if (m_level >= pSpellEntry->spellLevel)
                     {
                         me->LearnSpell(spellId, false);
                         actualSpells.push_back(pSpellEntry);
@@ -775,7 +775,7 @@ void WorldBotAI::PopulateSpellData(){
                     if (!pSpellEntry)
                         continue;
 
-                    if (me->GetLevel() >= pSpellEntry->spellLevel)
+                    if (m_level >= pSpellEntry->spellLevel)
                     {
                         me->LearnSpell(spellId, false);
                         actualSpells.push_back(pSpellEntry);
@@ -795,7 +795,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -814,7 +814,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -833,7 +833,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -852,7 +852,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -871,7 +871,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -890,7 +890,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -909,7 +909,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -928,7 +928,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -947,7 +947,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -966,7 +966,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -985,7 +985,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -1004,7 +1004,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -1023,7 +1023,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -1042,7 +1042,7 @@ void WorldBotAI::PopulateSpellData(){
                 if (!pSpellEntry)
                     continue;
 
-                if (me->GetLevel() >= pSpellEntry->spellLevel)
+                if (m_level >= pSpellEntry->spellLevel)
                 {
                     me->LearnSpell(spellId, false);
                     actualSpells.push_back(pSpellEntry);
@@ -1055,4 +1055,5 @@ void WorldBotAI::PopulateSpellData(){
     }
 
     PopulateProffessionSpells();
+    sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::UpdateAI : Profession spells are generated.");
 }

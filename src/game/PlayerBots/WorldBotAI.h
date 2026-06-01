@@ -47,6 +47,8 @@ public:
         // items
         void UseMount();
         void AddItemToInventory(uint32 itemId, uint32 count = 1);
+        void AddAllSpellReagents();
+        void AddRangedWeaponAmmo();
         bool UseItemEffect(Item* pItem);
         
         // movement
@@ -97,6 +99,8 @@ private:
         uint32 invSlot, bool isNeedToEquip /* true -- equip, false -- store */);
     void GenerateInventorySlotPermEnchant(Item*);
     void PopulateProffessionSpells();
+    void GenerateBags();
+    void GenerateMounts();
 
     void UpdateOutOfCombatAI();
     void UpdateOutOfCombatWarrior();
