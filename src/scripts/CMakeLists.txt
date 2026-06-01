@@ -4,7 +4,6 @@ set(LIBRARY_NAME scripts)
 set (SCRIPTS_SRCS
     ScriptLoader.h
     custom/custom.h
-    custom/npc_j_eevee.h
     eastern_kingdoms/burning_steppes/blackrock_depths/blackrock_depths.h
     eastern_kingdoms/burning_steppes/blackrock_spire/blackrock_spire.h
     eastern_kingdoms/burning_steppes/blackwing_lair/blackwing_lair.h
@@ -32,17 +31,13 @@ set (SCRIPTS_SRCS
     kalimdor/the_barrens/wailing_caverns/def_wailing_caverns.h
     PrecompiledHeaders/scriptPCH.h
     world/dragons_of_nightmare/boss_dragon_of_nightmare.h
+    world/npc_j_eevee.h
     ScriptLoader.cpp
     ScriptLoader_noscripts.cpp
     battlegrounds/battleground.cpp
     battlegrounds/battleground_alterac.cpp
-    custom/boss_arena_hardog.cpp
     custom/custom.cpp
     custom/custom_creatures.cpp
-    custom/event_attack_city.cpp
-    custom/gmisland.cpp
-    custom/npc_escort.cpp
-    custom/npc_j_eevee.cpp
     eastern_kingdoms/alterac_mountains/alterac_mountains.cpp
     eastern_kingdoms/arathi_highlands/arathi_highlands.cpp
     eastern_kingdoms/blasted_lands/blasted_lands.cpp
@@ -126,7 +121,6 @@ set (SCRIPTS_SRCS
     eastern_kingdoms/hillsbrad_foothills/hillsbrad_foothills.cpp
     eastern_kingdoms/hinterlands/hinterlands.cpp
     eastern_kingdoms/loch_modan/loch_modan.cpp
-    eastern_kingdoms/redridge_mountains/redridge_mountains.cpp
     eastern_kingdoms/searing_gorge/searing_gorge.cpp
     eastern_kingdoms/silverpine_forest/silverpine_forest.cpp
     eastern_kingdoms/silverpine_forest/shadowfang_keep/instance_shadowfang_keep.cpp
@@ -249,6 +243,7 @@ set (SCRIPTS_SRCS
     world/elemental_invasions.cpp
     world/fireworks_show.cpp
     world/go_scripts.cpp
+    world/npc_j_eevee.cpp
     world/npcs_special.cpp
     world/totems.cpp
     world/scourge_invasion.cpp
@@ -270,12 +265,6 @@ if((${CMAKE_VERSION} VERSION_LESS "3.16") OR USE_PCH_OLD)
   # Enable precompiled headers when using the GCC compiler.
   if(USE_PCH)
     include_directories(${CMAKE_CURRENT_BINARY_DIR})
-  endif()
-endif()
-
-if(WIN32)
-  if(MINGW)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpermissive")
   endif()
 endif()
 
@@ -327,22 +316,16 @@ include_directories(
   ${CMAKE_SOURCE_DIR}/src/game/vmap
   ${CMAKE_SOURCE_DIR}/dep/include
   ${CMAKE_SOURCE_DIR}/dep/recastnavigation
-  ${CMAKE_SOURCE_DIR}/dep/include/g3dlite
   ${CMAKE_SOURCE_DIR}/dep/recastnavigation/Detour/Include
   ${CMAKE_BINARY_DIR}
   ${CMAKE_BINARY_DIR}/src/shared
   ${MYSQL_INCLUDE_DIR}
 )
 
-if(NOT USE_STD_MALLOC)
-  include_directories(
-    ${TBB_INCLUDE_DIRS}
-  )
-endif()
-
 add_library(${LIBRARY_NAME} STATIC
   ${SCRIPTS_SRCS}
 )
+mangos_target_flags(${LIBRARY_NAME})
 
 SET_TARGET_PROPERTIES (${LIBRARY_NAME} PROPERTIES FOLDER "Game Libs")
 
