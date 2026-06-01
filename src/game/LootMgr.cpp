@@ -28,6 +28,7 @@
 #include "Conditions.h"
 #include "Group.h"
 #include "BattleGroundMgr.h"
+#include "Utilities/Random.h"
 
 static eConfigFloatValues const qualityToRate[MAX_ITEM_QUALITY] =
 {
@@ -558,7 +559,7 @@ void Loot::FillNotNormalLootFor(Player* pl)
 {
     if (pl->IsInWorld())
         m_allowedLooters.push_back(pl->GetObjectGuid());
-    
+
     uint32 plguid = pl->GetGUIDLow();
 
     QuestItemMap::const_iterator qmapitr = m_playerQuestItems.find(plguid);
@@ -829,7 +830,7 @@ WorldObject const* Loot::GetLootTarget() const
             if (Player const* pPlayer = sObjectAccessor.FindPlayer(pCorpse->GetOwnerGuid()))
                 return pPlayer;
     }
-    
+
     return m_lootTarget;
 }
 
@@ -924,7 +925,7 @@ ByteBuffer& operator<<(ByteBuffer& b, LootView const& lv)
                     break;
                 case OWNER_PERMISSION:
                     //slot_type = LOOT_SLOT_TYPE_OWNER;
-                    slot_type = LOOT_SLOT_TYPE_ALLOW_LOOT; // Sinon pas de loot auto ...
+                    slot_type = LOOT_SLOT_TYPE_ALLOW_LOOT; // Otherwise no auto-loot ...
                     break;
                 default:
                     break;

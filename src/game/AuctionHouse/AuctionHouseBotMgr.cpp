@@ -8,6 +8,7 @@
 #include "Config/Config.h"
 #include "Chat.h"
 #include "Util.h"
+#include "Utilities/Random.h"
 
 #include "ItemEnchantmentMgr.h"
 
