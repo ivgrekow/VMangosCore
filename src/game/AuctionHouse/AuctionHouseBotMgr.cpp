@@ -367,7 +367,7 @@ void AuctionHouseBotMgr::Update(bool force /* = false */)
 
         if (needToAdd){
             AddItem(ahbotEntry, auctionHouse);
-            auctionHouseCount;
+            auctionHouseCount++;
             cycleCounter = 0;
         }
     }
