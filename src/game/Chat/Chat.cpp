@@ -133,6 +133,15 @@ ChatCommand * ChatHandler::getCommandTable()
         { nullptr,        0,                    false, nullptr,                                          "", nullptr },
     };
 
+    static ChatCommand worldBotCommandTable[] =
+    {
+        { "add",            SEC_PLAYER,     false,  &ChatHandler::HandleWorldBotAddCommand,   "", nullptr },
+        { "remove",         SEC_PLAYER,     false,  &ChatHandler::HandleWorldBotRemoveCommand,   "", nullptr },
+        { "spawnlvlrange",  SEC_PLAYER,     false,  &ChatHandler::HandleWorldBotSpawnCommand, "", nullptr },
+        { "findpath",       SEC_PLAYER,     false,  &ChatHandler::HandleWorldBotFindPathCommand, "", nullptr},
+        { nullptr,        0,                    false, nullptr,                                          "", nullptr },
+    };
+
     static ChatCommand accountSetCommandTable[] =
     {
         { "addon",          SEC_CONSOLE,        true,  &ChatHandler::HandleAccountSetAddonCommand,     "", nullptr },
@@ -1218,6 +1227,7 @@ ChatCommand * ChatHandler::getCommandTable()
         { "ahbot",          SEC_ADMINISTRATOR,  true, nullptr,                            "Manage AH bot", ahbotCommandTable    },
         { "partybot",       SEC_ADMINISTRATOR,  false, nullptr,                       "Manage party bots", partyBotCommandTable },
         { "battlebot",      SEC_ADMINISTRATOR,  true, nullptr,                      "Manage battle bots", battleBotCommandTable},
+        { "worldbot",       SEC_ADMINISTRATOR,  true, nullptr,                      "Manage world bots", worldBotCommandTable},
         { "world",          SEC_ADMINISTRATOR,  false, nullptr,                                        "", worldCommandTable    },
         { "possess",        SEC_GAMEMASTER,     false, &ChatHandler::HandlePossessCommand,             "", nullptr              },
         { "cinematic",      SEC_DEVELOPER,      false, nullptr,                                        "", cinematicCommandTable},

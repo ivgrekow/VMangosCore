@@ -12,12 +12,15 @@
 #include "PlayerBotAI.h"
 #include "PartyBotAI.h"
 #include "BattleBotAI.h"
+#include "WorldBotAI.h"
 #include "BattleBotWaypoints.h"
 #include "BattleGroundMgr.h"
 #include "MapManager.h"
 #include "Language.h"
 #include "Utilities/Random.h"
 #include "Spell.h"
+
+#include <regex>
 
 INSTANTIATE_SINGLETON_1(PlayerBotMgr);
 
@@ -143,6 +146,101 @@ void PlayerBotMgr::Load()
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr] Between %u and %u bots online", m_confMinRandomBots, m_confMaxRandomBots);
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr] %u now loading", m_stats.loadingCount);
     }
+
+    // 9- Load travel nodes
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> [PlayerBotMgr] Loading worldbot travelnodes...");
+    result.reset();
+    result = WorldDatabase.PQuery("SELECT id, name, map_id, x, y, z, linked FROM worldbot_travelnode;");
+    if (!result)
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Table `worldbot_travelnode` is empty.");
+    else{
+        do {
+            fields = result->Fetch();
+            uint32 id = fields[0].GetUInt32();
+            std::string name {fields[1].GetString()};
+            uint32 map_id = fields[2].GetUInt32();
+            float x = fields[3].GetFloat();
+            float y = fields[4].GetFloat();
+            float z = fields[5].GetFloat();
+            uint8 linked = fields[6].GetUInt8();
+            TravelNode travelNode;
+            travelNode.id = id;
+            travelNode.name = name;
+            travelNode.map_id = map_id;
+            travelNode.x = x;
+            travelNode.y = y;
+            travelNode.z = z;
+            travelNode.linked = linked;
+            m_travelNodes.push_back(travelNode);
+        } while (result->NextRow());
+    }
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %d worldbot travelnodes.", m_travelNodes.size());
+
+    // 10- load travel node links
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> [PlayerBotMgr] Loading worldbot travelnode links...");
+    result.reset();
+    result = WorldDatabase.PQuery("SELECT node_id, to_node_id, type, object, distance, swim_distance, extra_cost, calculated, max_creature_0, max_creature_1, max_creature_2 FROM worldbot_travelnode_link;");
+    if (!result)
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Table `worldbot_travelnode_link` is empty.");
+    else {
+        do {
+            fields = result->Fetch();
+            TravelNodeLink travelnodeLink;
+            travelnodeLink.node_id = fields[0].GetUInt32();
+            travelnodeLink.to_node_id = fields[1].GetUInt32();
+            travelnodeLink.type = fields[2].GetUInt8();
+            travelnodeLink.object = fields[3].GetUInt32();
+            travelnodeLink.distance = fields[4].GetFloat();
+            travelnodeLink.swim_distance = fields[5].GetFloat();
+            travelnodeLink.extra_cost = fields[6].GetFloat();
+            travelnodeLink.calculated = fields[7].GetUInt8();
+            travelnodeLink.max_creature0 = fields[8].GetUInt8();
+            travelnodeLink.max_creature1 = fields[9].GetUInt8();
+            travelnodeLink.max_creature2 = fields[10].GetUInt8();
+            m_travelNodeLinks.push_back(travelnodeLink);
+        } while (result->NextRow());
+    }
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %d worldbot travelnode links.", m_travelNodeLinks.size());
+
+    // 11- load travel node paths
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> [PlayerBotMgr] Loading worldbot travelnode paths...");
+    result.reset();
+    result = WorldDatabase.PQuery("SELECT node_id, to_node_id, nr, map_id, x, y, z FROM worldbot_travelnode_path;");
+    if (!result)
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Table `worldbot_travelnode_path` is empty.");
+    else {
+        do {
+            fields = result->Fetch();
+            TravelNodePath travelnodePath;
+            travelnodePath.node_id = fields[0].GetUInt32();
+            travelnodePath.to_node_id = fields[1].GetUInt32();
+            travelnodePath.nr = fields[2].GetUInt32();
+            travelnodePath.map_id = fields[3].GetUInt32();
+            travelnodePath.x = fields[4].GetFloat();
+            travelnodePath.y = fields[5].GetFloat();
+            travelnodePath.z = fields[6].GetFloat();
+            m_travelNodePaths.push_back(travelnodePath);
+        } while (result->NextRow());
+    }
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %d worldbot travelnode paths.", m_travelNodePaths.size());
+
+    // 12- taxi flight info
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> [PlayerBotMgr] Loading worldbot taxi info...");
+    result.reset();
+    result = WorldDatabase.PQuery("SELECT id, mount_creature_id1, mount_creature_id2 FROM taxi_nodes;");
+    if (!result)
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Table `taxi_nodes` is empty.");
+    else {
+        do {
+            fields = result->Fetch();
+            TaxiFlightNodeInfo info;
+            info.id = fields[0].GetUInt32();
+            info.mount_creature_id1 = fields[1].GetUInt32();
+            info.mount_creature_id2 = fields[2].GetUInt32();
+            m_taxiFlightNodeInfo.push_back(info);
+        }while (result->NextRow());
+    }
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %d worldbot taxi info entries.", m_taxiFlightNodeInfo.size());
 }
 
 void PlayerBotMgr::DeleteAll()
@@ -633,6 +731,13 @@ void PlayerBotMgr::DeleteBattleBots()
     m_confBattleBotAutoJoin = false;
 }
 
+void PlayerBotMgr::DeleteWorldBots(){
+    for (auto const& itr: m_bots){
+        if (dynamic_cast<WorldBotAI*>(itr.second->ai.get()))
+            itr.second->requestRemoval = true;
+    }
+}
+
 bool PlayerBotMgr::ForceAccountConnection(WorldSession* sess)
 {
     if (sess->GetBot())
@@ -661,6 +766,327 @@ void PlayerBotMgr::AddAllBots()
         if (!it->second->isChatBot && it->second->state == PB_STATE_OFFLINE)
             AddBot(it->first);
     }
+}
+
+std::vector<uint32> PlayerBotMgr::FindAStarPath(Team team, uint32 startMapId, Position posStart, uint32 endMapId, Position posEnd, bool includeFlightPath, bool includeAreaTrigger, bool includeTransport, uint32 maxCreatureLevel){
+    std::vector<uint32> result;
+    
+    // if (startMapId != endMapId){
+    //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindAStarPath : start and end maps are different.");
+    //     return result;
+    // }
+    
+    
+    std::vector<TravelNode> startNodes;
+    std::vector<TravelNode> endNodes;
+
+    for (const auto& node : m_travelNodes){
+        if (node.map_id == startMapId)
+            startNodes.push_back(node);
+        
+        if (node.map_id == endMapId)
+            endNodes.push_back(node);
+    }
+    
+    if (startNodes.empty()){
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindAStarPath : no start nodes found on source map.");
+        return result;
+    }
+
+    if (endNodes.empty()){
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindAStarPath : no end nodes found on target map.");
+        return result;
+    }
+    
+    // Находим ближайший стартовый и целевой узлы
+    float minDistStart = std::numeric_limits<float>::max();
+    float minDistEnd = std::numeric_limits<float>::max();
+    TravelNode startNode;
+    TravelNode goalNode;
+    
+    for (const auto& node : startNodes){
+        Vector3 startVec(Vector3({node.x, node.y, node.z}) - Vector3({posStart.x, posStart.y, posStart.z}));
+        float lengthToStart = startVec.length();
+        if (lengthToStart < minDistStart){
+            minDistStart = lengthToStart;
+            startNode = node;
+        }
+    }
+
+    for (const auto& node: endNodes){
+        Vector3 endVec(Vector3({node.x, node.y, node.z}) - Vector3({posEnd.x, posEnd.y, posEnd.z}));
+        float lengthToEnd = endVec.length();
+        if (lengthToEnd < minDistEnd){
+            minDistEnd = lengthToEnd;
+            goalNode = node;
+        }
+    }
+    
+    if (!startNode.linked || !goalNode.linked){
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindAStarPath : start or goal node has no links.");
+        return result;
+    }
+    
+    // A* алгоритм
+    struct AStarNode {
+       TravelNode node;
+        float g; // стоимость от старта до текущего узла
+        float h; // эвристика (расстояние до цели)
+        float f; // g + h
+        uint32 parentId;
+        
+        AStarNode(TravelNode n, float gCost, float hCost, uint32 pId) 
+            : node(n), g(gCost), h(hCost), f(gCost + hCost), parentId(pId) {}
+        
+        bool operator>(const AStarNode& other) const {
+            return f > other.f;
+        }
+    };
+    
+    std::unordered_map<uint32, float> gScore; // стоимость от старта до узла
+    std::unordered_map<uint32, uint32> cameFrom; // предыдущий узел в оптимальном пути
+    std::unordered_map<uint32, bool> closedSet; // уже обработанные узлы
+    
+    // Приоритетная очередь (минимальная куча)
+    std::priority_queue<AStarNode, std::vector<AStarNode>, std::greater<AStarNode>> openSet;
+    
+    // Инициализация
+    gScore[startNode.id] = 0.0f;
+    float startH = CalculateHeuristic(startNode, goalNode);
+    openSet.push(AStarNode(startNode, 0.0f, startH, 0));
+    
+    while (!openSet.empty()){
+        AStarNode current = openSet.top();
+        openSet.pop();
+        
+        // Проверяем, не обработали ли мы этот узел уже с лучшей стоимостью
+        if (closedSet[current.node.id])
+            continue;
+            
+        closedSet[current.node.id] = true;
+        
+        // Достигли цели?
+        if (current.node.id == goalNode.id){
+            // Восстанавливаем путь
+            std::vector<TravelNode> path;
+            uint32 currentNodeId = goalNode.id;
+            while (currentNodeId != 0){
+                // path.push_back(m_worldBotConfig.travelNode[currentNodeId]);
+                path.push_back(GetTravelNode(currentNodeId));
+                currentNodeId = cameFrom[currentNodeId];
+            }
+            std::reverse(path.begin(), path.end());
+            // result = path;
+            for (const auto& node: path)
+                result.push_back(node.id);
+            break;
+        }
+        
+        // Получаем соседей
+        std::vector<TravelNodeLink> neighbours = GetTravelNodeLinksById(team, current.node.id, includeFlightPath, includeAreaTrigger, includeTransport, maxCreatureLevel);
+        
+        for (const auto& nodeLink : neighbours){
+            if (closedSet[nodeLink.to_node_id])
+                continue;
+                
+            // WorldBotConfig::TravelNode neighborNode = m_worldBotConfig.travelNode[nodeLink.to_node_id];
+            TravelNode neighborNode = GetTravelNode(nodeLink.to_node_id);
+            float tentativeG = current.g + nodeLink.distance;
+            
+            // Если нашли лучший путь к соседу
+            if (!gScore.count(neighborNode.id) || tentativeG < gScore[neighborNode.id]){
+                cameFrom[neighborNode.id] = current.node.id;
+                gScore[neighborNode.id] = tentativeG;
+                float heuristic = CalculateHeuristic(neighborNode, goalNode);
+                openSet.push(AStarNode(neighborNode, tentativeG, heuristic, current.node.id));
+            }
+        }
+    }
+    
+    if (result.empty()){
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindAStarPath : failed to find path from node %d to node %d.", startNode.id, goalNode.id);
+    }
+    
+    return result;
+}
+
+// Вспомогательный метод для эвристики
+float PlayerBotMgr::CalculateHeuristic(const TravelNode& from, const TravelNode& to){
+    Vector3 fromVec(from.x, from.y, from.z);
+    Vector3 toVec(to.x, to.y, to.z);
+    return (toVec - fromVec).length();
+}
+
+std::vector<TravelNodeLink> PlayerBotMgr::GetTravelNodeLinksById(uint32 team, uint32 id, bool includeFlightPath, bool includeAreaTrigger, bool includeTransport, uint32 maxCreatureLevel) const {
+    std::vector<TravelNodeLink> result;
+    for (const auto& nodeLink: m_travelNodeLinks){
+
+        if (nodeLink.node_id == id){
+            if (nodeLink.max_creature0 > maxCreatureLevel + 3)
+                continue;
+            
+            if (nodeLink.type == PATH_TYPE_FLIGHTPATH){
+                if (!includeFlightPath)
+                    continue;
+                
+                const TaxiPathEntry* taxiEntry = sTaxiPathStore.LookupEntry(nodeLink.object);
+                if (!taxiEntry){
+                    sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[PlayerBotMgr]::GetTravelNodeLinksById : error getting taxiEntry with id #%d.", nodeLink.object);
+                    continue;
+                }
+                const TaxiFlightNodeInfo& flightInfo = GetTaxiFlightNodeInfoById(taxiEntry->from);
+                if (team == ALLIANCE && !flightInfo.mount_creature_id2)
+                    continue;
+                else if (team == HORDE && !flightInfo.mount_creature_id1)
+                    continue;
+            }
+
+            else if (nodeLink.type == PATH_TYPE_AREATRIGGER && !includeAreaTrigger)
+                continue;
+
+            else if (nodeLink.type == PATH_TYPE_TRANSPORT && !includeTransport)
+                continue;
+                
+            result.push_back(nodeLink);
+        }
+    }
+
+    return result;
+}
+
+TaxiFlightNodeInfo PlayerBotMgr::GetTaxiFlightNodeInfoById(uint32 id) const {
+    TaxiFlightNodeInfo result;
+    for (const auto& entry: m_taxiFlightNodeInfo){
+        if (entry.id == id){
+            result = entry;
+            break;
+        }
+    }
+    return result;
+}
+
+std::vector<TravelNode> PlayerBotMgr::GetTravelNodesFilterByRegex(std::string regex){
+    std::vector<TravelNode> result;
+    for (const auto& node: m_travelNodes){
+        std::regex pattern {regex};
+        if (std::regex_search(node.name, pattern)){
+            result.push_back(node);
+        }
+    }
+    return result;
+}
+
+TravelNode PlayerBotMgr::GetTravelNode(uint32 id) const {
+    TravelNode travelNode;
+    for (const auto& node: m_travelNodes){
+        if (id == node.id){
+            travelNode = node;
+            break;
+        }
+    }
+    return travelNode;
+}
+
+std::vector<TravelNodePath> PlayerBotMgr::GetTravelNodePath(uint32 node_id, uint32 to_node_id){
+    std::vector<TravelNodePath> result;
+    for (const auto& path: m_travelNodePaths){
+        if (path.node_id == node_id && path.to_node_id == to_node_id)
+            result.push_back(path);
+    }
+    
+    return result;
+}
+
+TravelNodeLink PlayerBotMgr::GetTravelNodeLink(uint32 node_id, uint32 to_node_id){
+    TravelNodeLink result;
+    for (const auto& link: m_travelNodeLinks){
+        if (link.node_id == node_id && link.to_node_id == to_node_id){
+            result = link;
+            break;
+        }
+    }
+    return result;
+}
+
+std::vector<uint32> PlayerBotMgr::GetSafeSpawnNodesForLevel(Team team, uint32 level){
+    std::vector<uint32> result;
+    std::vector<std::string> locNames;
+    std::set<uint32> excludedNodes;
+    if (team == ALLIANCE){
+        // Splintertree Post, Zoramgar Outpost, Sun Rock Retreat, Hammerfall, Gromgol Base Camp, Tarren Mill, Ghost Walker Post,
+        // Shadowprey Village, Revantusk Village, Flame Crest, Camp Mojache, Valormok, Bloodvenom Post, Bulwark
+        excludedNodes = {143, 156, 1297, 99, 1327, 770, 398, 410, 1539, 281, 647, 188, 631, 1704};
+        locNames = {"Aldrassil", "Northshire", "Coldridge"};
+        if (level > 6)
+            locNames.insert(locNames.end(), {"Elwynn", "Teldrassil", "Dun Morogh"});
+        
+        if (level > 12)
+            locNames.insert(locNames.end(), {"Westfall", "Darkshore", "Loch Modan"});
+
+        if (level > 20)
+            locNames.insert(locNames.end(), {"Redridge", "Duskwood", "Ashenvale", "Wetlands", "Stonetalon Mountains"});
+
+        if (level > 30)
+            locNames.insert(locNames.end(), {"Arathi Highlands", "Stranglethorn Vale", "Hillsbrad", "Alterac Mountains", "Desolace"});
+
+        if (level > 40)
+            locNames.insert(locNames.end(), {"Hinterlands", "Searing Gorge", "Tanaris", "Feralas"});
+
+        if (level > 48)
+            locNames.push_back("Blasted Lands");
+
+        if (level > 50)
+            locNames.insert(locNames.end(), {"Azshara", "Felwood", "UnGoro", "Burning Steppes", "Deadwind Pass", "Western Plaguelands"});
+
+        if (level > 55)
+            locNames.insert(locNames.end(), {"Eastern Plaguelands", "Silithus", "Winterspring"});
+    }
+    else if (team == HORDE){
+        // Razorofen Downs, Razorfen Kraul, Astranaar, Southshore, Stonetalon Peak, Refuge Pointe, Rebel Camp, Nijels Point,
+        // Theramor Isle, Feathermoon Stronghold, Thalanaar, Talonbranch Glade, Talrendis Point, Morgans Vigil, Chillwind Camp,
+        // Lakeshire, Darkshire
+        excludedNodes = {1510, 1511, 118, 769, 1296, 101, 1338, 404, 538, 650, 666, 643, 180, 282, 1696, 1089, 509};
+        locNames = {"Valley of Trials", "Red Cloud Mesa", "Deathknell"};
+        if (level > 6)
+            locNames.insert(locNames.end(), {"Durotar", "Mulgor", "Tirisfal Glades"});
+
+        if (level > 12)
+            locNames.insert(locNames.end(), {"Barrens", "Silverpine"});
+
+        if (level > 20)
+            locNames.insert(locNames.end(), {"Ashenvale", "Stonetalon Mountains", "Hillsbrad",});
+        
+        if (level > 28)
+            locNames.insert(locNames.end(), {"Thousand Needles"});
+
+        if (level > 30)
+            locNames.insert(locNames.end(), {"Alterac Mountains", "Arathi Highlands", "Stranglethorn Vale", "Desolace"});
+
+        if (level > 35)
+            locNames.insert(locNames.end(), {"Swamp of Sorrows", "Badlands", "Dustwallow Marsh"});
+
+        if (level > 40)
+            locNames.insert(locNames.end(), {"Feralas", "Tanaris"});
+
+        if (level > 48)
+            locNames.push_back("Blasted Lands");
+
+        if (level > 50)
+            locNames.insert(locNames.end(), {"Ungoro", "Felwood", "Azshara", "Deadwind Pass", "Burning Steppes", "Western Plaguelands"});
+
+        if (level > 55)
+            locNames.insert(locNames.end(), {"Eastern Plaguelands", "Silithus", "Winterspring"});
+    }
+
+    for (auto name: locNames){
+        for (const auto& node: m_travelNodes){
+            std::regex regex {name};
+            if (std::regex_search(node.name, regex) && !excludedNodes.count(node.id))
+                result.push_back(node.id);
+        }
+    }
+
+    return result;
 }
 
 bool ChatHandler::HandleBotReloadCommand(char * args)
@@ -2036,5 +2462,331 @@ bool ChatHandler::HandleBattleBotShowAllPathsCommand(char* args)
     }
 
     PSendSysMessage("Showing %u paths for battleground.", id);
+    return true;
+}
+
+bool ChatHandler::HandleWorldBotAddCommand(char * args){
+    Player* pPlayer = m_session->GetPlayer();
+    if (!pPlayer)
+        return false;
+
+    if (!args)
+    {
+        SendSysMessage("Incorrect syntax. Expected role or class.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    uint8 botClass = 0;
+    uint32 botLevel = pPlayer->GetLevel();
+    CombatBotRoles botRole = ROLE_INVALID;
+
+    if (char* arg1 = ExtractArg(&args))
+    {
+        std::string option = arg1;
+        if (option == "warrior")
+            botClass = CLASS_WARRIOR;
+        else if (option == "paladin" && pPlayer->GetTeam() == ALLIANCE)
+            botClass = CLASS_PALADIN;
+        else if (option == "hunter")
+            botClass = CLASS_HUNTER;
+        else if (option == "rogue")
+            botClass = CLASS_ROGUE;
+        else if (option == "priest")
+            botClass = CLASS_PRIEST;
+        else if (option == "shaman" && pPlayer->GetTeam() == HORDE)
+            botClass = CLASS_SHAMAN;
+        else if (option == "mage")
+            botClass = CLASS_MAGE;
+        else if (option == "warlock")
+            botClass = CLASS_WARLOCK;
+        else if (option == "druid")
+            botClass = CLASS_DRUID;
+        else if (option == "dps")
+        {
+            botClass = PickRandomValue(CLASS_WARRIOR, CLASS_HUNTER, CLASS_ROGUE, CLASS_MAGE, CLASS_WARLOCK);
+            botRole = CombatBotBaseAI::IsMeleeDamageClass(botClass) ? ROLE_MELEE_DPS : ROLE_RANGE_DPS;
+        }
+        else if (option == "healer")
+        {
+            std::vector<uint32> dpsClasses = { CLASS_PRIEST, CLASS_DRUID };
+            if (pPlayer->GetTeam() == HORDE)
+                dpsClasses.push_back(CLASS_SHAMAN);
+            else
+                dpsClasses.push_back(CLASS_PALADIN);
+            botClass = SelectRandomContainerElement(dpsClasses);
+            botRole = ROLE_HEALER;
+        }
+        else if (option == "tank")
+        {
+            botClass = CLASS_WARRIOR;
+            botRole = ROLE_TANK;
+        }
+
+        // Prevent setting a custom level for bots unless the account is a GM or skipping checks is enabled.
+        if (GetSession()->GetSecurity() > SEC_PLAYER || sWorld.getConfig(CONFIG_BOOL_PARTY_BOT_SKIP_CHECKS))
+            ExtractUInt32(&args, botLevel);
+    }
+
+    if (!botClass)
+    {
+        SendSysMessage("Incorrect syntax. Expected role or class.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    uint8 botRace = SelectRandomRaceForClass(botClass, pPlayer->GetTeam());
+    if (!botRace)
+    {
+        SendSysMessage("Unable to select race for bot.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    float x, y, z;
+    pPlayer->GetNearPoint(pPlayer, x, y, z, 0, 5.0f, frand(0.0f, 6.0f));
+
+    WorldBotAI* ai = new WorldBotAI(nullptr, nullptr, botRole, botRace, botClass, botLevel, pPlayer->GetMapId(), pPlayer->GetMap()->GetInstanceId(), x, y, z, pPlayer->GetOrientation());
+    if (sPlayerBotMgr.AddBot(ai))
+        SendSysMessage("New world bot added.");
+    else
+    {
+        delete ai;
+        SendSysMessage("Error spawning bot.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    return true;
+}
+
+bool ChatHandler::HandleWorldBotRemoveCommand(char * args){
+    Player* pPlayer = GetSession()->GetPlayer();
+    if (!pPlayer)
+        return false;
+        
+    if (char* all = ExtractArg(&args)){
+        sPlayerBotMgr.DeleteWorldBots();
+        return true;
+    }
+
+    Player* pTarget = pPlayer->GetSelectedPlayer();
+    if (!pTarget)
+    {
+        SendSysMessage(LANG_NO_CHAR_SELECTED);
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    if (pTarget->AI())
+    {
+        if (WorldBotAI* pAI = dynamic_cast<WorldBotAI*>(pTarget->AI()))
+        {
+            pAI->botEntry->requestRemoval = true;
+            return true;
+        }
+    }
+
+    SendSysMessage("Target is not a world bot.");
+    SetSentErrorMessage(true);
+    return false;
+}
+
+bool ChatHandler::HandleWorldBotFindPathCommand(char * args){
+    Player* pPlayer = GetSession()->GetPlayer();
+    if (!pPlayer)
+        return false;
+
+        // Player* pTarget = pPlayer->GetSelectedPlayer();
+    Map* map = sMapMgr.FindMap(0);
+    Player* pTarget = map->GetPlayer(pPlayer->GetSelectionGuid());
+    if (!pTarget){
+        map = sMapMgr.FindMap(1);
+        pTarget = map->GetPlayer(pPlayer->GetSelectionGuid());
+    }
+
+    if (!pTarget){
+        SendSysMessage("No target selected.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    std::vector<uint32> vec = sPlayerBotMgr.FindAStarPath(pTarget->GetTeam(), pTarget->GetMapId(), pTarget->GetPosition(),
+        pPlayer->GetMapId(), pPlayer->GetPosition(), true, true, true, pTarget->GetLevel());
+
+    if (vec.empty()){
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[ChatHandler]::HandleWorldBotFindPathCommand : no nodes found.");
+        SendSysMessage("No nodes found.");
+        return true;
+    }
+
+    std::string msg = "[ChatHandler] : Found path:\n";
+    for (auto& id: vec){
+        msg.append("[" + std::to_string(id) + ", \"" + sPlayerBotMgr.GetTravelNode(id).name + "\"]\n -> ");
+    }
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, msg.c_str());
+    return true;
+}
+
+bool ChatHandler::HandleWorldBotSpawnCommand(char * args){
+    Player* pPlayer = GetSession()->GetPlayer();
+    if (!pPlayer)
+        return false;
+
+    uint32 minLevel = 0;
+    ExtractUInt32(&args, minLevel);
+    if (!minLevel){
+        SendSysMessage("Error getting minimal level for worldbots.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+    uint32 maxLevel = 0;
+    ExtractUInt32(&args, maxLevel);
+    if (!minLevel){
+        SendSysMessage("Error getting maximum level for worldbots.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    if (minLevel > maxLevel){
+        uint32 temp = minLevel;
+        minLevel = maxLevel;
+        maxLevel = minLevel;
+    }
+
+    uint32 count = 0;
+    ExtractUInt32(&args, count);
+
+    for (uint32 i=0; i < count; ++i){
+        Team botTeam = PickRandomValue(ALLIANCE, HORDE);
+        uint32 botLevel = urand(minLevel, maxLevel);
+        std::vector<uint32> vec = sPlayerBotMgr.GetSafeSpawnNodesForLevel(botTeam, botLevel);
+        if (!vec.size()){
+            SendSysMessage("No nodes found for specified level range.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        uint32 nodeId = SelectRandomContainerElement(vec);
+        const TravelNode& node = sPlayerBotMgr.GetTravelNode(nodeId);
+        uint8 botClass = CLASS_WARRIOR;
+        CombatBotRoles botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_RANGE_DPS, ROLE_TANK /*, ROLE_HEALER */);
+        if (botRole == ROLE_MELEE_DPS){
+            std::vector<Classes> vec {CLASS_WARRIOR, CLASS_ROGUE, CLASS_DRUID};
+            if (botTeam == ALLIANCE)
+                vec.push_back(CLASS_PALADIN);
+            else
+                vec.push_back(CLASS_SHAMAN);
+
+            botClass = SelectRandomContainerElement(vec);
+        }
+        else if (botRole == ROLE_RANGE_DPS){
+            std::vector<Classes> vec {CLASS_WARLOCK, CLASS_MAGE, CLASS_PRIEST, CLASS_HUNTER, CLASS_DRUID};
+            if (botTeam == HORDE)
+                vec.push_back(CLASS_SHAMAN);
+
+            botClass = SelectRandomContainerElement(vec);
+        }
+        else if (botRole == ROLE_TANK){
+            botClass = CLASS_WARRIOR;
+        }
+        else if (botRole == ROLE_HEALER){
+            std::vector<Classes> vec {CLASS_PRIEST, CLASS_DRUID};
+            if (botTeam == ALLIANCE)
+                vec.push_back(CLASS_PALADIN);
+            else
+                vec.push_back(CLASS_SHAMAN);
+
+            botClass = SelectRandomContainerElement(vec);
+        }
+        uint8 botRace = SelectRandomRaceForClass(botClass, botTeam);
+        WorldBotAI* pAI = new WorldBotAI(nullptr, nullptr, botRole, botRace, botClass, (uint8)botLevel, node.map_id, pPlayer->GetInstanceId(), node.x, node.y, node.z, frand(0.0f, 6.28f));
+        pAI->SetSafeSpawnNodes(vec);
+        if (!sPlayerBotMgr.AddBot(pAI))
+        //     ;
+        // else
+        {
+            delete pAI;
+            SendSysMessage("Error spawning bot.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ Spawned in %s.", node.name.c_str());
+        // else
+        //     SendSysMessage("New world bot added.");
+        
+        // if (botRole == ROLE_HEALER){
+        //     botLevel = urand(minLevel, maxLevel);
+        //     botTeam = PickRandomValue(ALLIANCE, HORDE);
+        //     botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_RANGE_DPS, ROLE_TANK);
+
+        //     if (botRole == ROLE_MELEE_DPS){
+        //         std::vector<Classes> vec {CLASS_WARRIOR, CLASS_ROGUE, CLASS_DRUID};
+        //         if (botTeam == ALLIANCE)
+        //             vec.push_back(CLASS_PALADIN);
+        //         else
+        //             vec.push_back(CLASS_SHAMAN);
+
+        //         botClass = SelectRandomContainerElement(vec);
+        //     }
+        //     else if (botRole == ROLE_RANGE_DPS){
+        //         std::vector<Classes> vec {CLASS_WARLOCK, CLASS_MAGE, CLASS_PRIEST, CLASS_HUNTER, CLASS_DRUID};
+        //         if (botTeam == HORDE)
+        //             vec.push_back(CLASS_SHAMAN);
+
+        //         botClass = SelectRandomContainerElement(vec);
+        //     }
+        //     else if (botRole == ROLE_TANK){
+        //         botClass = CLASS_WARRIOR;
+        //     }
+
+        //     botRace = SelectRandomRaceForClass(botClass, botTeam);
+        //     float x, y, z;
+        //     pAI->me->GetNearPoint(pAI->me, x, y, z, 0, 5.0f, frand(0.0f, 6.28f));
+        //     PartyBotAI* ai = new PartyBotAI(pAI->me, nullptr, botRole, botRace, botClass, (uint8)botLevel, node.map_id, pAI->me->GetInstanceId(), x, y, z, frand(0.0f, 6.28f));
+        //     if (!sPlayerBotMgr.AddBot(ai)){
+        //         delete ai;
+        //         SendSysMessage("Error spawning bot.");
+        //         SetSentErrorMessage(true);
+        //         return false;
+        //     }
+        // }
+        // else if (urand(0, 100) <= 35){
+        //     botLevel = urand(minLevel, maxLevel);
+        //     botTeam = PickRandomValue(ALLIANCE, HORDE);
+        //     botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_RANGE_DPS, ROLE_TANK);
+
+        //     if (botRole == ROLE_MELEE_DPS){
+        //         std::vector<Classes> vec {CLASS_WARRIOR, CLASS_ROGUE, CLASS_DRUID};
+        //         if (botTeam == ALLIANCE)
+        //             vec.push_back(CLASS_PALADIN);
+        //         else
+        //             vec.push_back(CLASS_SHAMAN);
+
+        //         botClass = SelectRandomContainerElement(vec);
+        //     }
+        //     else if (botRole == ROLE_RANGE_DPS){
+        //         std::vector<Classes> vec {CLASS_WARLOCK, CLASS_MAGE, CLASS_PRIEST, CLASS_HUNTER, CLASS_DRUID};
+        //         if (botTeam == HORDE)
+        //             vec.push_back(CLASS_SHAMAN);
+
+        //         botClass = SelectRandomContainerElement(vec);
+        //     }
+        //     else if (botRole == ROLE_TANK){
+        //         botClass = CLASS_WARRIOR;
+        //     }
+
+        //     botRace = SelectRandomRaceForClass(botClass, botTeam);
+        //     float x, y, z;
+        //     pAI->me->GetNearPoint(pAI->me, x, y, z, 0, 5.0f, frand(0.0f, 6.28f));
+        //     PartyBotAI* ai = new PartyBotAI(pAI->me, nullptr, botRole, botRace, botClass, (uint8)botLevel, node.map_id, pAI->me->GetInstanceId(), x, y, z, frand(0.0f, 6.28f));
+        //     if (!sPlayerBotMgr.AddBot(ai)){
+        //         delete ai;
+        //         SendSysMessage("Error spawning bot.");
+        //         SetSentErrorMessage(true);
+        //         return false;
+        //     }
+        // }
+    }
+
     return true;
 }

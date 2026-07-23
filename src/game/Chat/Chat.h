@@ -99,12 +99,14 @@ enum class ParseCommandResult
 
 class PartyBotAI;
 class BattleBotAI;
+class WorldBotAI;
 
 class ChatHandler
 {
     friend class CombatBotBaseAI;
     friend class PartyBotAI;
     friend class BattleBotAI;
+    friend class WorldBotAI;
     public:
         explicit ChatHandler(WorldSession* session);
         explicit ChatHandler(Player* player);
@@ -305,6 +307,11 @@ class ChatHandler
         bool HandleBattleBotRemoveAllCommand(char* args);
         bool HandleBattleBotShowPathCommand(char* args);
         bool HandleBattleBotShowAllPathsCommand(char* args);
+
+        bool HandleWorldBotAddCommand(char * args);
+        bool HandleWorldBotRemoveCommand(char * args);
+        bool HandleWorldBotFindPathCommand(char * args);
+        bool HandleWorldBotSpawnCommand(char * args);
 
         // spell_disabled
         bool HandleReloadSpellDisabledCommand(char *args);

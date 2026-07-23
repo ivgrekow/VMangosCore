@@ -1847,25 +1847,27 @@ void CombatBotBaseAI::AddAllSpellReagents()
 bool CombatBotBaseAI::AreOthersOnSameTarget(ObjectGuid guid, bool checkMelee, bool checkSpells) const
 {
     Group* pGroup = me->GetGroup();
-    for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
-    {
-        if (Player* pMember = itr->getSource())
+    if (pGroup){
+        for (GroupReference* itr = pGroup->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
-            // Not self.
-            if (pMember == me)
-                continue;
-
-            // Not the target itself.
-            if (pMember->GetObjectGuid() == guid)
-                continue;
-
-            if (pMember->GetTargetGuid() == guid)
+            if (Player* pMember = itr->getSource())
             {
-                if (checkMelee && pMember->HasUnitState(UNIT_STATE_MELEE_ATTACKING))
-                    return true;
-
-                if (checkSpells && pMember->IsNonMeleeSpellCasted())
-                    return true;
+                // Not self.
+                if (pMember == me)
+                    continue;
+    
+                // Not the target itself.
+                if (pMember->GetObjectGuid() == guid)
+                    continue;
+    
+                if (pMember->GetTargetGuid() == guid)
+                {
+                    if (checkMelee && pMember->HasUnitState(UNIT_STATE_MELEE_ATTACKING))
+                        return true;
+    
+                    if (checkSpells && pMember->IsNonMeleeSpellCasted())
+                        return true;
+                }
             }
         }
     }
@@ -2641,6 +2643,10 @@ void CombatBotBaseAI::EquipRandomGearInEmptySlots()
 
         // Avoid low level items
         if ((pProto->ItemLevel + sWorld.getConfig(CONFIG_UINT32_PARTY_BOT_RANDOM_GEAR_LEVEL_DIFFERENCE)) < me->GetLevel())
+            continue;
+
+        // avoid too high level gear
+        if (pProto->ItemLevel - me->GetLevel() > 5)
             continue;
 
         if (me->CanUseItem(pProto, onlyPvE) != EQUIP_ERR_OK)

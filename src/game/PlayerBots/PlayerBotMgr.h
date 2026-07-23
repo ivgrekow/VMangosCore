@@ -66,6 +66,65 @@ struct PlayerBotStats
     confMaxOnline(0), confMinOnline(0), confRandomBotsRefresh(0), confUpdateDiff(0) {}
 };
 
+enum TravelNodePathType {
+    PATH_TYPE_NONE,
+    PATH_TYPE_WALK,
+    PATH_TYPE_AREATRIGGER,
+    PATH_TYPE_TRANSPORT,
+    PATH_TYPE_FLIGHTPATH,
+    PATH_TYPE_TELEPORTSPELL,
+    PATH_TYPE_STATICPORTAL,
+    PATH_TYPE_MAX
+};
+
+struct TravelNode {
+    uint32 id; // prim key
+    std::string name;
+    uint32 map_id;
+    float x, y, z;
+    bool linked;
+
+    TravelNode() = default;
+};
+
+struct TravelNodeLink {
+    uint32 node_id = 0; // prim key
+    uint32 to_node_id = 0; // prim key
+    uint8 type = 0;
+    uint32 object = 0;
+    float distance = 0.0f;
+    float swim_distance = 0.0f;
+    float extra_cost = 0.0f;
+    uint8 calculated = 0;
+    uint8 max_creature0 = 0;
+    uint8 max_creature1 = 0;
+    uint8 max_creature2 = 0;
+
+    TravelNodeLink() = default;
+};
+
+struct TravelNodePath {
+    uint32 node_id = 0; // prim key
+    uint32 to_node_id = 0; // prim key
+    uint32 nr = 0; // prim key
+    uint32 map_id = 0;
+    float x = 0.0f, y = 0.0f, z = 0.0f;
+
+    TravelNodePath() = default;
+
+    Position GetPosition() const{
+        return Position(x, y, z, 10.0f);
+    }
+};
+
+struct TaxiFlightNodeInfo{
+    uint32 id = 0;
+    uint32 mount_creature_id1 = 0;
+    uint32 mount_creature_id2 = 0;
+
+    TaxiFlightNodeInfo() = default;
+};
+
 
 class PlayerBotMgr
 {
@@ -90,6 +149,8 @@ class PlayerBotMgr
         void AddBattleBot(BattleGroundQueueTypeId queueType, Team botTeam, uint32 botLevel, bool temporary);
         void DeleteBattleBots();
 
+        void DeleteWorldBots();
+
         void DeleteAll();
         void AddAllBots();
 
@@ -107,6 +168,20 @@ class PlayerBotMgr
         uint32 GenBotAccountId() { return ++m_maxAccountId; }
         PlayerBotStats& GetStats(){ return m_stats; }
         void Start() { m_confEnableRandomBots = true; }
+
+        // traveling methods
+        std::vector<uint32> FindAStarPath(Team team, uint32 startMapId, Position posStart, uint32 endMapId, Position posEnd, bool includeFlightPath = true, bool includeAreaTrigger = true, bool includeTransport = true, uint32 maxCreatureLevel = 0);
+        float CalculateHeuristic(const TravelNode& from, const TravelNode& to);
+        TravelNode GetTravelNode(uint32 id) const;
+        TravelNodeLink GetTravelNodeLink(uint32 node_id, uint32 to_node_id);
+        const std::vector<TravelNode>& GetTravelNodes() const { return m_travelNodes; };
+        std::vector<TravelNode> GetTravelNodesFilterByRegex(std::string regex);
+        std::vector<uint32> GetSafeSpawnNodesForLevel(Team team, uint32 level);
+        std::vector<TravelNodeLink> GetTravelNodeLinksById(uint32 team, uint32 id, bool includeFlightPath = true, bool includeAreaTrigger = true, bool includeTransport = true, uint32 maxCreatureLevel = 0) const;
+        const std::vector<TravelNodeLink>& GetTravelNodeLinks() const { return m_travelNodeLinks; }
+        TaxiFlightNodeInfo GetTaxiFlightNodeInfoById(uint32 id) const;
+        std::vector<TravelNodePath> GetTravelNodePath(uint32 node_id, uint32 to_node_id);
+
     protected:
         // How long since last update?
         uint32 m_elapsedTime;
@@ -128,6 +203,11 @@ class PlayerBotMgr
         bool m_confDebug;
         bool m_confEnableRandomBots;
         bool m_confBattleBotAutoJoin;
+
+        std::vector<TravelNode> m_travelNodes;
+        std::vector<TravelNodeLink> m_travelNodeLinks;
+        std::vector<TravelNodePath> m_travelNodePaths;
+        std::vector<TaxiFlightNodeInfo> m_taxiFlightNodeInfo;
 };
 
 #define sPlayerBotMgr MaNGOS::Singleton<PlayerBotMgr>::Instance()
