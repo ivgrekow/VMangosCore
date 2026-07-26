@@ -114,21 +114,20 @@ public:
     Unit* m_primaryTarget = nullptr;
     std::list<Unit*> m_CCTargets;
     Position m_targetPos;
+    std::vector<uint32> m_safeTravelPoints;
     std::vector<uint32> m_safeSpawnNodes;
     std::vector<uint32> m_travelNodes;
-    int32 m_currentNodeIndex = -1;
+    int32 m_currentNodeIndex = 0;
     std::vector<TravelNodePath> m_travelNodePath;
-    int32 m_currentPathIndex = -1;
+    int32 m_currentPathIndex = 0;
     void ClearTravelData(bool freeTravelNodes = false){
         m_travelNodePath.clear();
-        m_currentPathIndex = -1;
+        m_currentPathIndex = 0;
         if (freeTravelNodes){
+            m_currentNodeIndex = 0;
             m_travelNodes.clear();
-            m_targetPos = Position(0, 0, 0, 0);
+            m_targetPos = Position();
         }
-    }
-    void SetSafeSpawnNodes(std::vector<uint32> vec){
-        m_safeSpawnNodes = vec;
     }
 };
 

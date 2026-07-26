@@ -768,7 +768,7 @@ void PlayerBotMgr::AddAllBots()
     }
 }
 
-std::vector<uint32> PlayerBotMgr::FindAStarPath(Team team, uint32 startMapId, Position posStart, uint32 endMapId, Position posEnd, bool includeFlightPath, bool includeAreaTrigger, bool includeTransport, uint32 maxCreatureLevel){
+std::vector<uint32> PlayerBotMgr::FindAStarPath(Team team, uint32 startMapId, Position posStart, uint32 endMapId, Position posEnd, bool includeFlightPath, bool includeAreaTrigger, bool includeTransport, uint32 maxCreatureLevel, uint32 maxAllianceLevel, uint32 maxHordeLevel){
     std::vector<uint32> result;
     
     // if (startMapId != endMapId){
@@ -904,7 +904,7 @@ std::vector<uint32> PlayerBotMgr::FindAStarPath(Team team, uint32 startMapId, Po
     }
     
     if (result.empty()){
-        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindAStarPath : failed to find path from node %d to node %d.", startNode.id, goalNode.id);
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindAStarPath : failed to find path from node %d (%s) to node %d (%s).", startNode.id, startNode.name.c_str(), goalNode.id, goalNode.name.c_str());
     }
     
     return result;
@@ -917,13 +917,20 @@ float PlayerBotMgr::CalculateHeuristic(const TravelNode& from, const TravelNode&
     return (toVec - fromVec).length();
 }
 
-std::vector<TravelNodeLink> PlayerBotMgr::GetTravelNodeLinksById(uint32 team, uint32 id, bool includeFlightPath, bool includeAreaTrigger, bool includeTransport, uint32 maxCreatureLevel) const {
+std::vector<TravelNodeLink> PlayerBotMgr::GetTravelNodeLinksById(Team team, uint32 id, bool includeFlightPath, 
+        bool includeAreaTrigger, bool includeTransport, uint32 maxCreatureLevel,
+        uint32 maxAllianceCreatureLevel, uint32 maxHordeCreatureLevel) const {
     std::vector<TravelNodeLink> result;
     for (const auto& nodeLink: m_travelNodeLinks){
 
         if (nodeLink.node_id == id){
-            if (nodeLink.max_creature0 > maxCreatureLevel + 3)
-                continue;
+            // if (nodeLink.max_creature0 > (maxCreatureLevel + 3))
+            //     continue;
+            
+            // if (team == ALLIANCE && nodeLink.max_creature2 > (maxHordeCreatureLevel + 3))
+            //     continue;
+            // else if (team == HORDE && nodeLink.max_creature1 > (maxAllianceCreatureLevel + 3))
+            //     continue;
             
             if (nodeLink.type == PATH_TYPE_FLIGHTPATH){
                 if (!includeFlightPath)
@@ -1008,7 +1015,7 @@ TravelNodeLink PlayerBotMgr::GetTravelNodeLink(uint32 node_id, uint32 to_node_id
     return result;
 }
 
-std::vector<uint32> PlayerBotMgr::GetSafeSpawnNodesForLevel(Team team, uint32 level){
+std::vector<uint32> PlayerBotMgr::GetSafeSpawnNodes(Team team, uint32 level){
     std::vector<uint32> result;
     std::vector<std::string> locNames;
     std::set<uint32> excludedNodes;
@@ -1016,72 +1023,231 @@ std::vector<uint32> PlayerBotMgr::GetSafeSpawnNodesForLevel(Team team, uint32 le
         // Splintertree Post, Zoramgar Outpost, Sun Rock Retreat, Hammerfall, Gromgol Base Camp, Tarren Mill, Ghost Walker Post,
         // Shadowprey Village, Revantusk Village, Flame Crest, Camp Mojache, Valormok, Bloodvenom Post, Bulwark
         excludedNodes = {143, 156, 1297, 99, 1327, 770, 398, 410, 1539, 281, 647, 188, 631, 1704};
-        locNames = {"Aldrassil", "Northshire", "Coldridge"};
-        if (level > 6)
-            locNames.insert(locNames.end(), {"Elwynn", "Teldrassil", "Dun Morogh"});
+        if (level <= 6)
+            locNames = {"Aldrassil", "Northshire", "Coldridge"};
         
-        if (level > 12)
-            locNames.insert(locNames.end(), {"Westfall", "Darkshore", "Loch Modan"});
+        else if (level <= 12)
+            locNames = {"Elwynn", "Teldrassil", "Dun Morogh"};
 
-        if (level > 20)
-            locNames.insert(locNames.end(), {"Redridge", "Duskwood", "Ashenvale", "Wetlands", "Stonetalon Mountains"});
+        else if (level <= 20)
+            locNames = {"Westfall", "Darkshore", "Loch Modan"};
 
-        if (level > 30)
-            locNames.insert(locNames.end(), {"Arathi Highlands", "Stranglethorn Vale", "Hillsbrad", "Alterac Mountains", "Desolace"});
+        else if (level <= 25)
+            locNames = {"Redridge", "Darkshire", "Menethil", "Southshore", "Astranaar"};
 
-        if (level > 40)
-            locNames.insert(locNames.end(), {"Hinterlands", "Searing Gorge", "Tanaris", "Feralas"});
+        else if (level <= 30)
+            locNames = {"Duskwood", "Astranaar", "Menethil", "Stonetalon Peak"};
 
-        if (level > 48)
-            locNames.push_back("Blasted Lands");
+        else if (level <= 35)
+            locNames = {"Refuge Pointe", "Rebel Camp", "Southshore", "Nijels"};
 
-        if (level > 50)
-            locNames.insert(locNames.end(), {"Azshara", "Felwood", "UnGoro", "Burning Steppes", "Deadwind Pass", "Western Plaguelands"});
+        else if (level <= 40)
+            locNames = {"Refuge Pointe", "Rebel Camp", "Southshore", "Nijels", "Booty Bay", "Thelsamar", "Theramore", "Nether"};
 
-        if (level > 55)
-            locNames.insert(locNames.end(), {"Eastern Plaguelands", "Silithus", "Winterspring"});
+        else if (level <= 45)
+            locNames = {"Aerie", "Booty Bay", "Rebel Camp", "Thelsamar", "Theramore", "Gadgetzan"};
+
+        else if (level <= 50)
+            locNames = {"Aerie", "Thorium Point", "Gadgetzan", "Feathermoon", "Thalanaar", "Nether"};
+
+        else if (level <= 55)
+            locNames = {"Nether", "Marshals", "Talrendis", "Talonbranch", "Chillwind Camp", "Deadwind", "Morgans Vigil"};
+
+        else if (level <= 60)
+            locNames = {"Chillwind Camp", "Lights", "Morgans Vigil", "Deadwind", "Everlook", "Cenarion Hold"};
     }
     else if (team == HORDE){
         // Razorofen Downs, Razorfen Kraul, Astranaar, Southshore, Stonetalon Peak, Refuge Pointe, Rebel Camp, Nijels Point,
         // Theramor Isle, Feathermoon Stronghold, Thalanaar, Talonbranch Glade, Talrendis Point, Morgans Vigil, Chillwind Camp,
         // Lakeshire, Darkshire
         excludedNodes = {1510, 1511, 118, 769, 1296, 101, 1338, 404, 538, 650, 666, 643, 180, 282, 1696, 1089, 509};
-        locNames = {"Valley of Trials", "Red Cloud Mesa", "Deathknell"};
-        if (level > 6)
-            locNames.insert(locNames.end(), {"Durotar", "Mulgor", "Tirisfal Glades"});
+        if (level <= 6)
+            locNames = {"Valley of Trials", "Red Cloud Mesa", "Deathknell"};
 
-        if (level > 12)
-            locNames.insert(locNames.end(), {"Barrens", "Silverpine"});
+        else if (level <= 12)
+            locNames = {"Durotar", "Mulgor", "Tirisfal Glades"};
 
-        if (level > 20)
-            locNames.insert(locNames.end(), {"Ashenvale", "Stonetalon Mountains", "Hillsbrad",});
+        else if (level <= 20)
+            locNames = {"Barrens", "Silverpine"};
+
+        else if (level <= 25)
+            locNames = {"Zoramgar", "Sun Rock", "Tarren", "Taurajo"};
         
-        if (level > 28)
-            locNames.insert(locNames.end(), {"Thousand Needles"});
+        else if (level <= 30)
+            locNames = {"Zoramgar", "Splintertree", "Freewind", "Tarren", "Stonetalon"};
 
-        if (level > 30)
-            locNames.insert(locNames.end(), {"Alterac Mountains", "Arathi Highlands", "Stranglethorn Vale", "Desolace"});
+        else if (level <= 35)
+            locNames = {"Freewind", "Hammerfall", "Tarren", "Gromgol", "Ghost"};
 
-        if (level > 35)
-            locNames.insert(locNames.end(), {"Swamp of Sorrows", "Badlands", "Dustwallow Marsh"});
+        else if (level <= 40)
+            locNames = {"Hammerfall", "Tarren", "Gromgol", "Booty Bay", "Stonard", "Taurajo", "Kargath", "Shadowprey"};
 
-        if (level > 40)
-            locNames.insert(locNames.end(), {"Feralas", "Tanaris"});
+        else if (level <= 45)
+            locNames = {"Booty Bay", "Gromgol", "Stonard", "Kargath", "Gadgetzan", "Revantusk"};
 
-        if (level > 48)
-            locNames.push_back("Blasted Lands");
+        else if (level <= 50)
+            locNames = {"Mojache", "Gadgetzan", "Revantusk", "Thorium Point", "Stonard"};
 
-        if (level > 50)
-            locNames.insert(locNames.end(), {"Ungoro", "Felwood", "Azshara", "Deadwind Pass", "Burning Steppes", "Western Plaguelands"});
+        else if (level <= 55)
+            locNames = {"Bulwark", "Deadwind", "Flame Crest", "Marshals", "Bloodvenom", "Valormok", "Kargath"};
 
-        if (level > 55)
-            locNames.insert(locNames.end(), {"Eastern Plaguelands", "Silithus", "Winterspring"});
+        else if (level <= 60)
+            locNames = {"Bulwark", "Deadwind", "Flame Crest", "Lights", "Everlook", "Cenarion Hold"};
     }
 
-    for (auto name: locNames){
+    for (const auto& name: locNames){
         for (const auto& node: m_travelNodes){
             std::regex regex {name};
             if (std::regex_search(node.name, regex) && !excludedNodes.count(node.id))
+                result.push_back(node.id);
+        }
+    }
+
+    return result;
+}
+
+std::vector<uint32> PlayerBotMgr::GetGankerSpawnNodes(Team team, uint32 level){
+    std::vector<uint32> result;
+    std::vector<std::string> locNames;
+    std::set<uint32> excludedNodes;
+    if (team == ALLIANCE){
+        // Splintertree Post, Zoramgar Outpost, Sun Rock Retreat, Hammerfall, Gromgol Base Camp, Tarren Mill, Ghost Walker Post,
+        // Shadowprey Village, Revantusk Village, Flame Crest, Camp Mojache, Valormok, Bloodvenom Post, Bulwark
+        excludedNodes = {143, 156, 1297, 99, 1327, 770, 398, 410, 1539, 281, 647, 188, 631, 1704};
+
+        if (level >= 24 && level <= 28)
+            locNames = {"Stonetalon", "Hillsbrad"};
+        else if (level >= 29 && level <= 33)
+            locNames = {"Thousand"};
+    }
+    else if (team == HORDE){
+        // Astranaar, Southshore, Stonetalon Peak, Refuge Pointe, Rebel Camp, Nijels Point,
+        // Theramor Isle, Feathermoon Stronghold, Thalanaar, Talonbranch Glade, Talrendis Point, Morgans Vigil, Chillwind Camp,
+        // Lakeshire, Darkshire
+        excludedNodes = {118, 769, 1296, 101, 1338, 404, 538, 650, 666, 643, 180, 282, 1696, 1089, 509};
+
+        if (level >= 24 && level <= 28)
+            locNames = {"Wetlands", "Redridge"};
+        else if (level >= 29 && level <= 33)
+            locNames = {"Duskwood"};
+    }
+    
+    for (const auto& name: locNames){
+        for (const auto& node: m_travelNodes){
+            std::regex regex {name};
+            if (std::regex_search(node.name, regex) && !excludedNodes.count(node.id))
+                result.push_back(node.id);
+        }
+    }
+
+    return result;
+}
+
+std::vector<uint32> PlayerBotMgr::GetSafeTravelPoints(Team team, uint32 level){
+    std::vector<uint32> result;
+    std::vector<std::string> locNames;
+    std::set<uint32> excludedNodes;
+    if (team == ALLIANCE){
+        // Splintertree Post, Zoramgar Outpost, Sun Rock Retreat, Hammerfall, Gromgol Base Camp, Tarren Mill, Ghost Walker Post,
+        // Shadowprey Village, Revantusk Village, Flame Crest, Camp Mojache, Valormok, Bloodvenom Post, Bulwark
+        excludedNodes = {143, 156, 1297, 99, 1327, 770, 398, 410, 1539, 281, 647, 188, 631, 1704};
+        if (level <= 6)
+            locNames = {"Aldrassil", "Northshire", "Coldridge"};
+        
+        else if (level <= 12)
+            locNames = {"Elwynn", "Teldrassil", "Dun Morogh"};
+
+        else if (level <= 20)
+            locNames = {"Westfall", "Darkshore", "Loch Modan"};
+
+        else if (level <= 25)
+            locNames = {"Redridge", "Darkshire", "Wetlands", "Southshore", "Ashenvale"};
+
+        else if (level <= 30)
+            locNames = {"Duskwood", "Ashenvale", "Wetlands", "Stonetalon"};
+
+        else if (level <= 35)
+            locNames = {"Arathi Highlands", "Stranglethorn", "Hillsbrad", "Desolace"};
+
+        else if (level <= 40)
+            locNames = {"Arathi Highlands", "Stranglethorn", "Hillsbrad", "Desolace", "Badlands", "Dustwallow", "Blasted"};
+
+        else if (level <= 45)
+            locNames = {"Hinterlands", "Stranglethorn", "Badlands", "Dustwallow", "Tanaris"};
+
+        else if (level <= 50)
+            locNames = {"Hinterlands", "Searing Gorge", "Tanaris", "Feralas", "Blasted"};
+
+        else if (level <= 55)
+            locNames = {"Blasted", "Ungoro", "Azshara", "Felwood", "Western Plague", "Deadwind", "Burning Steppes"};
+
+        else if (level <= 60)
+            locNames = {"Western Plague", "Eatern Plague", "Burning Steppes", "Deadwind", "Winterspring", "Silithus"};
+    }
+    else if (team == HORDE){
+        // Astranaar, Southshore, Stonetalon Peak, Refuge Pointe, Rebel Camp, Nijels Point,
+        // Theramor Isle, Feathermoon Stronghold, Thalanaar, Talonbranch Glade, Talrendis Point, Morgans Vigil, Chillwind Camp,
+        // Lakeshire, Darkshire
+        excludedNodes = {118, 769, 1296, 101, 1338, 404, 538, 650, 666, 643, 180, 282, 1696, 1089, 509};
+        if (level <= 6)
+            locNames = {"Valley of Trials", "Red Cloud Mesa", "Deathknell"};
+
+        else if (level <= 12)
+            locNames = {"Durotar", "Mulgor", "Tirisfal Glades"};
+
+        else if (level <= 20)
+            locNames = {"Barrens", "Silverpine"};
+
+        else if (level <= 25)
+            locNames = {"Ashenvale", "Stonetalon", "Hillsbrad", "Barrens"};
+        
+        else if (level <= 30)
+            locNames = {"Ashenvale", "Thousand", "Hillsbrad", "Stonetalon"};
+
+        else if (level <= 35)
+            locNames = {"Arathi Highlands", "Stranglethorn", "Hillsbrad", "Desolace"};
+
+        else if (level <= 40)
+            locNames = {"Arathi Highlands", "Stranglethorn", "Hillsbrad", "Desolace", "Badlands", "Dustwallow", "Blasted"};
+
+        else if (level <= 45)
+            locNames = {"Hinterlands", "Stranglethorn", "Badlands", "Dustwallow", "Tanaris"};
+
+        else if (level <= 50)
+            locNames = {"Hinterlands", "Searing Gorge", "Tanaris", "Feralas", "Blasted"};
+
+        else if (level <= 55)
+            locNames = {"Blasted", "Ungoro", "Azshara", "Felwood", "Western Plague", "Deadwind", "Burning Steppes"};
+
+        else if (level <= 60)
+            locNames = {"Western Plague", "Eatern Plague", "Burning Steppes", "Deadwind", "Winterspring", "Silithus"};
+    }
+
+    for (const auto& name: locNames){
+        for (const auto& node: m_travelNodes){
+            if (excludedNodes.count(node.id))
+                continue;
+            
+            // sort links to this node
+            std::list<TravelNodeLink> links;
+            for (const auto& link: m_travelNodeLinks){
+                if (link.to_node_id == node.id)
+                    links.push_back(link);
+            }
+
+            // count links where difference between me and hostile creature > 3
+            uint32 count = 0;
+            for (const auto& link: links){
+                if ( (link.max_creature0 - level) > 3)
+                    count++;
+            }
+
+            // if no good link found then skip this node
+            if (count == links.size())
+                continue;
+
+            std::regex regex {name};
+            if (std::regex_search(node.name, regex))
                 result.push_back(node.id);
         }
     }
@@ -2657,10 +2823,19 @@ bool ChatHandler::HandleWorldBotSpawnCommand(char * args){
     uint32 count = 0;
     ExtractUInt32(&args, count);
 
+    uint32 allianceCount = 0;
+    uint32 hordeCount = 0;
     for (uint32 i=0; i < count; ++i){
         Team botTeam = PickRandomValue(ALLIANCE, HORDE);
         uint32 botLevel = urand(minLevel, maxLevel);
-        std::vector<uint32> vec = sPlayerBotMgr.GetSafeSpawnNodesForLevel(botTeam, botLevel);
+        std::vector<uint32> vec;
+        bool isGanker = false;
+        if (urand(0, 100) <= 33)
+            isGanker = true;
+        if (isGanker && botLevel >= 26 && botLevel <= 33)
+            vec = sPlayerBotMgr.GetGankerSpawnNodes(botTeam, botLevel);
+        else
+            vec = sPlayerBotMgr.GetSafeSpawnNodes(botTeam, botLevel);
         if (!vec.size()){
             SendSysMessage("No nodes found for specified level range.");
             SetSentErrorMessage(true);
@@ -2700,7 +2875,11 @@ bool ChatHandler::HandleWorldBotSpawnCommand(char * args){
         }
         uint8 botRace = SelectRandomRaceForClass(botClass, botTeam);
         WorldBotAI* pAI = new WorldBotAI(nullptr, nullptr, botRole, botRace, botClass, (uint8)botLevel, node.map_id, pPlayer->GetInstanceId(), node.x, node.y, node.z, frand(0.0f, 6.28f));
-        pAI->SetSafeSpawnNodes(vec);
+        pAI->m_safeSpawnNodes = vec;
+        if (isGanker)
+            pAI->m_safeTravelPoints = vec;
+        else
+            pAI->m_safeTravelPoints = sPlayerBotMgr.GetSafeTravelPoints(botTeam, botLevel);
         if (!sPlayerBotMgr.AddBot(pAI))
         //     ;
         // else
@@ -2711,6 +2890,10 @@ bool ChatHandler::HandleWorldBotSpawnCommand(char * args){
             return false;
         }
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ Spawned in %s.", node.name.c_str());
+        if (botTeam == ALLIANCE)
+            allianceCount++;
+        else if (botTeam == HORDE)
+            hordeCount++;
         // else
         //     SendSysMessage("New world bot added.");
         
@@ -2787,6 +2970,7 @@ bool ChatHandler::HandleWorldBotSpawnCommand(char * args){
         //     }
         // }
     }
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Spawned %d alliances and %d hordes.", allianceCount, hordeCount);
 
     return true;
 }

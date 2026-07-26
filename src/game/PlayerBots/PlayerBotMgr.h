@@ -170,14 +170,19 @@ class PlayerBotMgr
         void Start() { m_confEnableRandomBots = true; }
 
         // traveling methods
-        std::vector<uint32> FindAStarPath(Team team, uint32 startMapId, Position posStart, uint32 endMapId, Position posEnd, bool includeFlightPath = true, bool includeAreaTrigger = true, bool includeTransport = true, uint32 maxCreatureLevel = 0);
+        std::vector<uint32> FindAStarPath(Team team, uint32 startMapId, Position posStart, uint32 endMapId, Position posEnd, bool includeFlightPath = true, bool includeAreaTrigger = true, bool includeTransport = true, uint32 maxCreatureLevel = 60, uint32 maxAllianceLevel = 60, uint32 maxHordeLevel = 60);
         float CalculateHeuristic(const TravelNode& from, const TravelNode& to);
         TravelNode GetTravelNode(uint32 id) const;
         TravelNodeLink GetTravelNodeLink(uint32 node_id, uint32 to_node_id);
         const std::vector<TravelNode>& GetTravelNodes() const { return m_travelNodes; };
         std::vector<TravelNode> GetTravelNodesFilterByRegex(std::string regex);
-        std::vector<uint32> GetSafeSpawnNodesForLevel(Team team, uint32 level);
-        std::vector<TravelNodeLink> GetTravelNodeLinksById(uint32 team, uint32 id, bool includeFlightPath = true, bool includeAreaTrigger = true, bool includeTransport = true, uint32 maxCreatureLevel = 0) const;
+        std::vector<uint32> GetSafeSpawnNodes(Team team, uint32 level);
+        std::vector<uint32> GetGankerSpawnNodes(Team team, uint32 level);
+        std::vector<uint32> GetSafeTravelPoints(Team team, uint32 level);
+        std::vector<TravelNodeLink> GetTravelNodeLinksById(Team team, uint32 id, bool includeFlightPath = true, bool includeAreaTrigger = true, bool includeTransport = true,
+            uint32 maxCreatureLevel = 60,
+            uint32 maxAllianceCreatureLevel = 60,
+            uint32 maxHordeCreatureLevel = 60) const;
         const std::vector<TravelNodeLink>& GetTravelNodeLinks() const { return m_travelNodeLinks; }
         TaxiFlightNodeInfo GetTaxiFlightNodeInfoById(uint32 id) const;
         std::vector<TravelNodePath> GetTravelNodePath(uint32 node_id, uint32 to_node_id);

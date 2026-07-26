@@ -96,23 +96,29 @@ Player* WorldBotAI::GetPartyLeader() const
     if (!pGroup)
         return nullptr;
 
-    if (Player* originalLeader = ObjectAccessor::FindPlayerNotInWorld(m_leaderGuid))
-    {
-        if (me->InBattleGround() == originalLeader->InBattleGround())
-        {
-            // In case the original spawner is not in the same group as the bots anymore.
-            if (pGroup != originalLeader->GetGroup())
-                return nullptr;
+    ObjectGuid leaderGuid = pGroup->GetLeaderGuid();
+    Player* pLeader = sObjectMgr.GetPlayer(leaderGuid);
+    if (!pLeader)
+        return nullptr;
 
-            // In case the current leader is the bot itself and it's not inside a Battleground.
-            ObjectGuid currentLeaderGuid = pGroup->GetLeaderGuid();
-            if (currentLeaderGuid == me->GetObjectGuid() && !me->InBattleGround())
-                return nullptr;
-        }
+    return pLeader;
+    // if (Player* originalLeader = ObjectAccessor::FindPlayerNotInWorld(m_leaderGuid))
+    // {
+    //     if (me->InBattleGround() == originalLeader->InBattleGround())
+    //     {
+    //         // In case the original spawner is not in the same group as the bots anymore.
+    //         if (pGroup != originalLeader->GetGroup())
+    //             return nullptr;
 
-        return originalLeader;
-    }
-    return nullptr;
+    //         // In case the current leader is the bot itself and it's not inside a Battleground.
+    //         ObjectGuid currentLeaderGuid = pGroup->GetLeaderGuid();
+    //         if (currentLeaderGuid == me->GetObjectGuid() && !me->InBattleGround())
+    //             return nullptr;
+    //     }
+
+    //     return originalLeader;
+    // }
+    // return nullptr;
 }
 
 bool WorldBotAI::IsValidDistancingTarget(Unit* pTarget, Unit* pEnemy)
@@ -173,6 +179,9 @@ bool WorldBotAI::RunAwayFromTarget(Unit* pEnemy)
 
 bool WorldBotAI::DrinkAndEat()
 {
+    if (me->IsSwimming())
+        return false;
+    
     if (m_isBuffing)
         return false;
 
@@ -690,30 +699,41 @@ void WorldBotAI::UpdateAI(uint32 const diff)
         float x, y, z;
         uint32 map_id = me->GetMapId();
         float restorePercent = 0.5f;
-        Corpse* pCorpse = me->GetCorpse();
-        if (!pCorpse){
-            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : can't get my corpse.");
-            botEntry->requestRemoval = true;
-            return;
-        }
-        if (urand(0, 100) < 30){
-            if (m_safeSpawnNodes.empty()){
-                botEntry->requestRemoval = true;
-                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : can't get safe spawn nodes.");
+        if (GetPartyLeader()){
+            Corpse* pCorpse = me->GetCorpse();
+            if (!pCorpse){
+                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : can't get my corpse.");
                 botEntry->requestRemoval = true;
                 return;
             }
-            const TravelNode& node = sPlayerBotMgr.GetTravelNode(SelectRandomContainerElement(m_safeSpawnNodes));
-            map_id = node.map_id;
-            x = node.x;
-            y = node.y;
-            z = node.z;
-            restorePercent = 1.0f;
+            pCorpse->GetNearPoint(pCorpse, x, y, z, 0, 25.0f, 0.0f);
+            if (map_id != me->GetMapId())
+                ClearTravelData(true);
+            me->TeleportTo(map_id, x, y, z, frand(0.0f, 6.28f));
+            me->ResurrectPlayer(restorePercent);
+            me->SpawnCorpseBones();
+            me->CastSpell(me, WB_SPELL_HONORLESS_TARGET, true);
+            return;
         }
-        else
-            pCorpse->GetNearPoint(pCorpse, x, y, z, 0, 25.0f, frand(0.0f, 2 * M_PI_F));
-        if (map_id != me->GetMapId())
-            ClearTravelData(true);
+        // std::list<Unit*> enemies;
+        // me->GetEnemyListInRadiusAround(me, 30.0f, enemies);
+        // float avgLevel = 0.0f;
+        // for (const auto& enemy: enemies)
+        //     avgLevel += (float)enemy->GetLevel();
+        // avgLevel /= enemies.size();
+        // if (avgLevel > (m_level + 3))
+        if (m_safeSpawnNodes.empty()){
+            botEntry->requestRemoval = true;
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : can't get safe spawn nodes.");
+            botEntry->requestRemoval = true;
+            return;
+        }
+        const TravelNode& node = sPlayerBotMgr.GetTravelNode(SelectRandomContainerElement(m_safeTravelPoints));
+        map_id = node.map_id;
+        x = node.x;
+        y = node.y;
+        z = node.z;
+        restorePercent = 1.0f;
         me->TeleportTo(map_id, x, y, z, frand(0.0f, 6.28f));
         me->ResurrectPlayer(restorePercent);
         me->SpawnCorpseBones();
@@ -755,6 +775,15 @@ void WorldBotAI::UpdateAI(uint32 const diff)
     if (me->GetTargetGuid() == me->GetObjectGuid())
         me->ClearTarget();
 
+    Player* pLeader = nullptr;
+    if (me->GetGroup())
+        pLeader = GetPartyLeader();
+    
+    if (!pLeader)
+        m_leaderGuid = ObjectGuid();
+    else
+        m_leaderGuid = pLeader->GetObjectGuid();
+
     Unit* pVictim = me->GetVictim();
 
     // Prevent worldbot from chasing target entered stealth mode
@@ -787,7 +816,7 @@ void WorldBotAI::UpdateAI(uint32 const diff)
                 continue;
 
             if (pTarget->GetLevel() - m_level > 5){
-                if ( !pTarget->IsNonMeleeSpellCasted() || pTarget->GetSelectedPlayer() != me || pTarget->GetVictim() != me)
+                if (!pTarget->IsNonMeleeSpellCasted() || pTarget->GetSelectedPlayer() != me || pTarget->GetVictim() != me)
                     continue;
             }
 
@@ -798,7 +827,7 @@ void WorldBotAI::UpdateAI(uint32 const diff)
     }
     
     if (m_primaryTarget){
-        if (!IsValidHostileTarget(m_primaryTarget) || !me->IsWithinDist3d(me->GetPosition(), VISIBILITY_DISTANCE_NORMAL)){
+        if (!IsValidHostileTarget(m_primaryTarget) || !me->IsWithinDist3d(m_primaryTarget->GetPosition(), VISIBILITY_DISTANCE_NORMAL)){
             m_primaryTarget = nullptr;
             return;
         }
@@ -821,7 +850,7 @@ void WorldBotAI::UpdateAI(uint32 const diff)
     }
 
     if (!pVictim){
-        pVictim = SelectAttackTarget(nullptr);
+        pVictim = SelectAttackTarget(pLeader);
         if (pVictim){
             AttackStart(pVictim);
             return;
@@ -860,23 +889,53 @@ void WorldBotAI::UpdateAI(uint32 const diff)
     if (!me->IsInCombat() && DrinkAndEat())
         return;
 
-    if (m_travelNodes.empty()){
-        if (m_targetPos.x == 0.0f && m_targetPos.y == 0.0f && m_targetPos.z == 0.0f){
-            std::vector<TravelNode> possibleNodes;
-            for (const auto& link: sPlayerBotMgr.GetTravelNodeLinks()){
-                int diff = std::abs((int)(me->GetLevel() - link.max_creature0));
-                const TravelNode& node = sPlayerBotMgr.GetTravelNode(link.to_node_id);
-                if (diff <= 3 && me->GetMapId() == node.map_id)
-                    possibleNodes.push_back(node);
-            }
-            if (possibleNodes.empty()){
+    if (pLeader){
+        if (pLeader->IsBeingTeleported() && me->GetMapId() == pLeader->GetMapId())
+            return;
+
+        if (me->IsWithinDist3d(pLeader->GetPosition(), VISIBILITY_DISTANCE_NORMAL)){
+            if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
+                me->GetMotionMaster()->MoveFollow(pLeader, frand(5.0f, 8.0f), frand(-M_PI_F, 0.0f));
+            
+            if (!m_travelNodes.empty())
+                ClearTravelData(true);
+            return;
+        }
+        else if (m_travelNodes.empty()){
+            m_targetPos = pLeader->GetPosition();
+            m_travelNodes = sPlayerBotMgr.FindAStarPath(me->GetTeam(), me->GetMapId(), me->GetPosition(),
+                pLeader->GetMapId(), m_targetPos);
+            
+            if (m_travelNodes.empty()){
                 botEntry->requestRemoval = true;
-                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "___ no possible areas found.");
+                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : Bot \"%s\" can't get any travel path.", me->GetName());
                 return;
             }
-            const TravelNode& node = SelectRandomContainerElement(possibleNodes);
+            // m_currentNodeIndex = 0;
+            return;
+        }
+    }
+
+    if (m_travelNodes.empty()){
+        if (m_targetPos.x == 0.0f && m_targetPos.y == 0.0f && m_targetPos.z == 0.0f){
+            if (me->GetGroup())
+                return;
+            // std::vector<TravelNode> possibleNodes;
+            // for (const auto& link: sPlayerBotMgr.GetTravelNodeLinks()){
+            //     int diff = std::abs((int)(me->GetLevel() - link.max_creature0));
+            //     const TravelNode& node = sPlayerBotMgr.GetTravelNode(link.to_node_id);
+            //     if (diff <= 3 && me->GetMapId() == node.map_id)
+            //         possibleNodes.push_back(node);
+            // }
+            // if (possibleNodes.empty()){
+            //     botEntry->requestRemoval = true;
+            //     sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "___ no possible areas found.");
+            //     return;
+            // }
+            // const TravelNode& node = SelectRandomContainerElement(possibleNodes);
+            const TravelNode& node = sPlayerBotMgr.GetTravelNode(SelectRandomContainerElement(m_safeTravelPoints));
             m_targetPos = Position(node.x, node.y, node.z, 0.0f);
-            m_travelNodes = sPlayerBotMgr.FindAStarPath(me->GetTeam(), me->GetMapId(), me->GetPosition(), node.map_id, m_targetPos, true, true, false, m_level);
+            m_travelNodes = sPlayerBotMgr.FindAStarPath(me->GetTeam(), me->GetMapId(), me->GetPosition(), node.map_id, m_targetPos, true, true, true, m_level);
             if (m_travelNodes.empty()){
                 if (m_safeSpawnNodes.empty()){
                     botEntry->requestRemoval = true;
@@ -886,15 +945,21 @@ void WorldBotAI::UpdateAI(uint32 const diff)
                 const TravelNode& spawnNode = sPlayerBotMgr.GetTravelNode(SelectRandomContainerElement(m_safeSpawnNodes));
                 me->TeleportTo(spawnNode.map_id, spawnNode.x, spawnNode.y, spawnNode.z, frand(0.0, 6.28f));
                 m_targetPos = Position();
-                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ Teleported to safe node.");
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::UpdateAI : Bot \"%s\" has been teleported to safe node.", me->GetName());
                 return;
             }
-            m_currentNodeIndex = 0;
+            // m_currentNodeIndex = 0;
             // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ Found path:\n");
-            // for (const auto& node: m_travelNodes){
-            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "-> %d, %s", node.id, node.name.c_str());
+            // for (auto id: m_travelNodes){
+            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "-> %d, %s", id, (sPlayerBotMgr.GetTravelNode(id)).name.c_str());
             // }
         }
+        else if (me->GetDistance3dToCenter(m_targetPos) > 200.0f){
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : m_targetPos is too far away (> 200.0f).");
+            m_targetPos = Position();
+        }
+        else if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE)
+            me->GetMotionMaster()->MovePoint(0, m_targetPos.x, m_targetPos.y, m_targetPos.z, MOVE_PATHFINDING|MOVE_EXCLUDE_STEEP_SLOPES);
         return;
     }
     else if (m_currentNodeIndex < m_travelNodes.size()-1){
@@ -921,13 +986,14 @@ void WorldBotAI::UpdateAI(uint32 const diff)
             TravelNodePath& pathNode = m_travelNodePath[m_currentPathIndex];
             bool flag = false;
             Position pathPos {pathNode.x, pathNode.y, pathNode.z, 0.0f};
-            if (float dist = me->GetDistance3dToCenter(pathPos) > 5.0f){
-                if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE)
-                    me->GetMotionMaster()->MovePoint(0, pathPos.x, pathPos.y, pathPos.z, MOVE_PATHFINDING|MOVE_EXCLUDE_STEEP_SLOPES);
-            }
-            else if (dist > 150.0f){
+            float dist = me->GetDistance3dToCenter(pathPos);
+            if (dist > 150.0f){
                 ClearTravelData(true);
                 return;
+            }
+            else if (dist > 5.0f){
+                if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE)
+                    me->GetMotionMaster()->MovePoint(0, pathPos.x, pathPos.y, pathPos.z, MOVE_PATHFINDING|MOVE_EXCLUDE_STEEP_SLOPES);
             }
             else{
                 if (m_currentPathIndex + pathStep > m_travelNodePath.size() && m_currentPathIndex != (m_travelNodePath.size() - 1))
@@ -988,6 +1054,67 @@ void WorldBotAI::UpdateAI(uint32 const diff)
             me->TeleportTo(at->destination.mapId, at->destination.x, at->destination.y, at->destination.z, at->destination.o);
             ClearTravelData();
             m_currentNodeIndex++;
+        }
+        else if (link.type == PATH_TYPE_TRANSPORT){
+            // Map* map = me->GetMap();
+            // if (!map){
+            //     sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : what the heck?? Where is my current map?!");
+            //     botEntry->requestRemoval = true;
+            //     return;
+            // }
+            for(m_currentNodeIndex; m_currentNodeIndex < m_travelNodes.size()-1; ++m_currentNodeIndex){
+                const TravelNode& node = sPlayerBotMgr.GetTravelNode(m_travelNodes[m_currentNodeIndex]);
+                ++m_currentNodeIndex;
+                const TravelNode& to_node = sPlayerBotMgr.GetTravelNode(m_travelNodes[m_currentNodeIndex]);
+                const TravelNodeLink& link = sPlayerBotMgr.GetTravelNodeLink(node.id, to_node.id);
+                if (link.type == PATH_TYPE_WALK)
+                    break;
+            }
+            // if (m_currentNodeIndex >= m_travelNodes.size()){
+            //     botEntry->requestRemoval = true;
+            //     sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : all travel nodes are of PATH_TYPE_TRANSPORT???");
+            //     return;
+            // }
+            if (m_currentNodeIndex >= m_travelNodes.size())
+                m_currentNodeIndex -= 1;
+            const TravelNode& node = sPlayerBotMgr.GetTravelNode(m_travelNodes[m_currentNodeIndex]);
+            me->TeleportTo(node.map_id, node.x, node.y, node.z, me->GetOrientation());
+            m_currentNodeIndex++;
+            // const TransportTemplate* tInfo = sTransportMgr.GetTransportTemplate(link.object);
+            // if (!tInfo){
+            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Can't get transport template.");
+            //     m_updateTimer.Reset(10000);
+            //     return;
+            // }
+            // KeyFrameVec::const_iterator frameItr;
+            // for (frameItr = tInfo->keyFrames.cbegin(); frameItr != tInfo->keyFrames.cend(); ++frameItr){
+            //     if ((*frameItr).Node->mapid == map->GetId())
+            //         break;
+            // }
+            // if (frameItr != tInfo->keyFrames.cend()){
+            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "__ The ship is on the same map!");
+            //     m_updateTimer.Reset(15000);
+            //     return;
+            // }
+            // ObjectGuid guid = sObjectMgr.GetFullTransportGuidFromLowGuid(link.object);
+            
+            // GenericTransport* pTransport = map->GetTransport(guid);
+            // if (!pTransport)
+            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Can't get transport.");
+            // else
+            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, " ___ GOT TRANSPORT guid %d.", pTransport->GetGUIDLow());
+            // if (pTransport){
+            //     if (me->GetTransport() != pTransport){
+            //         pTransport->AddPassenger(me);
+            //     }
+            //     if (me->GetMotionMaster()->GetCurrentMovementGeneratorType()){
+            //         me->GetMotionMaster()->Clear(false, true);
+            //         me->GetMotionMaster()->MoveIdle();
+            //     }
+            //     pTransport->UpdatePassengerPosition(me);
+            //     return;
+            // }
+            // m_updateTimer.Reset(15000);
         }
     }
     else
@@ -2704,13 +2831,25 @@ void WorldBotAI::UpdateInCombatAI_Warrior()
                 return;
         }
 
-        if (m_spells.warrior.pDemoralizingShout &&
-            m_role == ROLE_TANK &&
-            CanTryToCastSpell(me, m_spells.warrior.pDemoralizingShout))
-        {
-            if (DoCastSpell(me, m_spells.warrior.pDemoralizingShout) == SPELL_CAST_OK)
-                return;
+        if (m_spells.warrior.pDemoralizingShout){
+            std::list<Unit*> enemies;
+            me->GetEnemyListInRadiusAround(me, 10.0f, enemies);
+            if (!enemies.empty()){
+                for (const auto& enemy: enemies){
+                    if (!enemy->HasAura(m_spells.warrior.pDemoralizingShout->Id) && CanTryToCastSpell(me, m_spells.warrior.pDemoralizingShout))
+                        if (DoCastSpell(me, m_spells.warrior.pDemoralizingShout) == SPELL_CAST_OK)
+                            return;
+                }
+            }
         }
+
+        // if (m_spells.warrior.pDemoralizingShout &&
+        //     m_role == ROLE_TANK &&
+        //     CanTryToCastSpell(me, m_spells.warrior.pDemoralizingShout))
+        // {
+        //     if (DoCastSpell(me, m_spells.warrior.pDemoralizingShout) == SPELL_CAST_OK)
+        //         return;
+        // }
 
         if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == IDLE_MOTION_TYPE
             && !me->CanReachWithMeleeAutoAttack(pVictim))
@@ -3497,10 +3636,14 @@ void WorldBotAI::Initialize() {
     uint32 newzone, newarea;
     me->GetZoneAndAreaId(newzone, newarea);
     me->UpdateZone(newzone, newarea);
-    m_safeSpawnNodes = sPlayerBotMgr.GetSafeSpawnNodesForLevel(me->GetTeam(), m_level);
+    // m_safeSpawnNodes = sPlayerBotMgr.GetSafeSpawnNodes(me->GetTeam(), m_level);
     if (m_safeSpawnNodes.empty()){
-        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ my safe nodes dont exist. Calling sPlayerBotMgr...");
-        m_safeSpawnNodes = sPlayerBotMgr.GetSafeSpawnNodesForLevel(me->GetTeam(), m_level);
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ my safe spawn nodes dont exist. Calling sPlayerBotMgr...");
+        m_safeSpawnNodes = sPlayerBotMgr.GetSafeSpawnNodes(me->GetTeam(), m_level);
+    }
+    if (m_safeTravelPoints.empty()){
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ my safe travel points dont exist. Calling sPlayerBotMgr...");
+        m_safeTravelPoints = sPlayerBotMgr.GetSafeTravelPoints(me->GetTeam(), m_level);
     }
 
     m_initialized = true;
