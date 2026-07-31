@@ -21,6 +21,7 @@
 #include "Spell.h"
 
 #include <regex>
+#include <fstream>
 
 INSTANTIATE_SINGLETON_1(PlayerBotMgr);
 
@@ -241,6 +242,8 @@ void PlayerBotMgr::Load()
         }while (result->NextRow());
     }
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %d worldbot taxi info entries.", m_taxiFlightNodeInfo.size());
+
+    m_statsTimer.Reset(-1);
 }
 
 void PlayerBotMgr::DeleteAll()
@@ -469,6 +472,103 @@ void PlayerBotMgr::Update(uint32 diff)
             AddOrRemoveBot();
             m_lastBotsRefresh += m_confRandomBotsRefresh;
         }
+    }
+
+    m_statsTimer.Update(diff);
+    if (m_statsTimer.Passed()){
+        m_statsTimer.Reset(12000);
+        uint32 totalCount = 0;
+        uint32 warriorCount = 0;
+        uint32 paladinCount = 0;
+        uint32 shamanCount = 0;
+        uint32 hunterCount = 0;
+        uint32 rogueCount = 0;
+        uint32 druidCount = 0;
+        uint32 mageCount = 0;
+        uint32 warlockCount = 0;
+        uint32 priestCount = 0;
+
+        uint32 idleCount = 0;
+        uint32 walkingCount = 0;
+        uint32 flightCount = 0;
+        
+        uint32 aliveCount = 0;
+        uint32 deadCount = 0;
+
+        uint32 allianceCount = 0;
+        uint32 hordeCount = 0;
+
+        for (const auto& bot: m_bots){
+            WorldBotAI* worldBot = dynamic_cast<WorldBotAI*>(bot.second->ai.get());
+            if (worldBot){
+                totalCount++;
+                uint32 my_class = worldBot->me->GetClass();
+                if (my_class == CLASS_WARRIOR)
+                    warriorCount++;
+                else if (my_class == CLASS_PALADIN)
+                    paladinCount++;
+                else if (my_class == CLASS_SHAMAN)
+                    shamanCount++;
+                else if (my_class == CLASS_HUNTER)
+                    hunterCount++;
+                else if (my_class == CLASS_ROGUE)
+                    rogueCount++;
+                else if (my_class == CLASS_DRUID)
+                    druidCount++;
+                else if (my_class == CLASS_MAGE)
+                    mageCount++;
+                else if (my_class == CLASS_WARLOCK)
+                    warlockCount++;
+                else if (my_class == CLASS_PRIEST)
+                    priestCount++;
+
+                uint32 move_type = worldBot->me->GetMotionMaster()->GetCurrentMovementGeneratorType();
+                if (move_type == IDLE_MOTION_TYPE)
+                    idleCount++;
+                else if (move_type == POINT_MOTION_TYPE)
+                    walkingCount++;
+                else if (worldBot->me->IsTaxiFlying())
+                    flightCount++;
+
+                if (worldBot->me->IsAlive())
+                    aliveCount++;
+                else
+                    deadCount++;
+
+                Team my_team = worldBot->me->GetTeam();
+                if (my_team == ALLIANCE)
+                    allianceCount++;
+                else if (my_team == HORDE)
+                    hordeCount++;
+            }
+        }
+        std::fstream file ("worldbot_stats.txt", std::ios::trunc|std::ios::out);
+        if (file.is_open()){
+            file << "WorldBot stats:" << std::endl;
+            file << "\tTotal count: " << totalCount << std::endl;
+            file << "\t\tWarriors: " << warriorCount << ", Paladins: " << paladinCount << ", Shamans: " << shamanCount <<
+                    ", Hunters: " << hunterCount << ", Rogues: " << rogueCount << ", Druids: " << druidCount << ", Mages: " <<
+                    mageCount << ", Warlocks: " << warlockCount << ", Priests: " << priestCount << std::endl;
+
+            file << "\tMovement type:" << std::endl;
+            file << "\t\tIdle: " << idleCount << std::endl;
+            file << "\t\tWalking: " << walkingCount << std::endl;
+            file << "\t\tTaxi flying: " << flightCount << std::endl;
+
+            file << "\tAlive: " << aliveCount << std::endl;
+            file << "\tDead: " << deadCount << std::endl;
+
+            file << "\tTeams:" << std::endl;
+            file << "\t\tAlliances: " << allianceCount << std::endl;
+            file << "\t\tHordes: " << hordeCount << std::endl;
+
+            file.close();
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "__________ world bot stats printed.");
+
+            return;
+        }
+        else
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ Failed to open file.");
     }
 }
 
@@ -775,6 +875,16 @@ std::vector<uint32> PlayerBotMgr::FindAStarPath(Team team, uint32 startMapId, Po
     //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindAStarPath : start and end maps are different.");
     //     return result;
     // }
+    std::set<uint32> excludedNodes;
+    if (team == ALLIANCE)
+        // Splintertree Post, Zoramgar Outpost, Sun Rock Retreat, Hammerfall, Gromgol Base Camp, Tarren Mill, Ghost Walker Post,
+        // Shadowprey Village, Revantusk Village, Flame Crest, Camp Mojache, Valormok, Bloodvenom Post, Bulwark
+        excludedNodes = {143, 156, 1297, 99, 1327, 770, 398, 410, 1539, 281, 647, 188, 631, 1704};
+    else if (team == HORDE)
+        // Astranaar, Southshore, Stonetalon Peak, Refuge Pointe, Rebel Camp, Nijels Point,
+        // Theramor Isle, Feathermoon Stronghold, Thalanaar, Talonbranch Glade, Talrendis Point, Morgans Vigil, Chillwind Camp,
+        // Lakeshire, Darkshire
+        excludedNodes = {118, 769, 1296, 101, 1338, 404, 538, 650, 666, 643, 180, 282, 1696, 1089, 509};
     
     
     std::vector<TravelNode> startNodes;
@@ -886,6 +996,9 @@ std::vector<uint32> PlayerBotMgr::FindAStarPath(Team team, uint32 startMapId, Po
         std::vector<TravelNodeLink> neighbours = GetTravelNodeLinksById(team, current.node.id, includeFlightPath, includeAreaTrigger, includeTransport, maxCreatureLevel);
         
         for (const auto& nodeLink : neighbours){
+            if (excludedNodes.count(nodeLink.to_node_id))
+                continue;
+
             if (closedSet[nodeLink.to_node_id])
                 continue;
                 
@@ -904,7 +1017,7 @@ std::vector<uint32> PlayerBotMgr::FindAStarPath(Team team, uint32 startMapId, Po
     }
     
     if (result.empty()){
-        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindAStarPath : failed to find path from node %d (%s) to node %d (%s).", startNode.id, startNode.name.c_str(), goalNode.id, goalNode.name.c_str());
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindAStarPath : failed to find (team %d) from node %d (%s) to node %d (%s).", team, startNode.id, startNode.name.c_str(), goalNode.id, goalNode.name.c_str());
     }
     
     return result;
@@ -942,9 +1055,10 @@ std::vector<TravelNodeLink> PlayerBotMgr::GetTravelNodeLinksById(Team team, uint
                     continue;
                 }
                 const TaxiFlightNodeInfo& flightInfo = GetTaxiFlightNodeInfoById(taxiEntry->from);
-                if (team == ALLIANCE && !flightInfo.mount_creature_id2)
+                const TaxiFlightNodeInfo& toInfo = GetTaxiFlightNodeInfoById(taxiEntry->to);
+                if (team == ALLIANCE && !flightInfo.mount_creature_id2 || !toInfo.mount_creature_id2)
                     continue;
-                else if (team == HORDE && !flightInfo.mount_creature_id1)
+                else if (team == HORDE && !flightInfo.mount_creature_id1 || !toInfo.mount_creature_id1)
                     continue;
             }
 
@@ -1021,8 +1135,9 @@ std::vector<uint32> PlayerBotMgr::GetSafeSpawnNodes(Team team, uint32 level){
     std::set<uint32> excludedNodes;
     if (team == ALLIANCE){
         // Splintertree Post, Zoramgar Outpost, Sun Rock Retreat, Hammerfall, Gromgol Base Camp, Tarren Mill, Ghost Walker Post,
-        // Shadowprey Village, Revantusk Village, Flame Crest, Camp Mojache, Valormok, Bloodvenom Post, Bulwark
-        excludedNodes = {143, 156, 1297, 99, 1327, 770, 398, 410, 1539, 281, 647, 188, 631, 1704};
+        // Shadowprey Village, Revantusk Village, Flame Crest, Camp Mojache, Valormok, Bloodvenom Post, Bulwark, Gnomeregan portal,
+        // [PH] Teleport to Booty Bay 
+        excludedNodes = {143, 156, 1297, 99, 1327, 770, 398, 410, 1539, 281, 647, 188, 631, 1704, 270, 1810};
         if (level <= 6)
             locNames = {"Aldrassil", "Northshire", "Coldridge"};
         
@@ -1059,8 +1174,8 @@ std::vector<uint32> PlayerBotMgr::GetSafeSpawnNodes(Team team, uint32 level){
     else if (team == HORDE){
         // Razorofen Downs, Razorfen Kraul, Astranaar, Southshore, Stonetalon Peak, Refuge Pointe, Rebel Camp, Nijels Point,
         // Theramor Isle, Feathermoon Stronghold, Thalanaar, Talonbranch Glade, Talrendis Point, Morgans Vigil, Chillwind Camp,
-        // Lakeshire, Darkshire
-        excludedNodes = {1510, 1511, 118, 769, 1296, 101, 1338, 404, 538, 650, 666, 643, 180, 282, 1696, 1089, 509};
+        // Lakeshire, Darkshire, Gnomeregan Portal, [PH] Teleport to Booty Bay
+        excludedNodes = {1510, 1511, 118, 769, 1296, 101, 1338, 404, 538, 650, 666, 643, 180, 282, 1696, 1089, 509, 270, 1810};
         if (level <= 6)
             locNames = {"Valley of Trials", "Red Cloud Mesa", "Deathknell"};
 
@@ -1149,8 +1264,8 @@ std::vector<uint32> PlayerBotMgr::GetSafeTravelPoints(Team team, uint32 level){
     std::set<uint32> excludedNodes;
     if (team == ALLIANCE){
         // Splintertree Post, Zoramgar Outpost, Sun Rock Retreat, Hammerfall, Gromgol Base Camp, Tarren Mill, Ghost Walker Post,
-        // Shadowprey Village, Revantusk Village, Flame Crest, Camp Mojache, Valormok, Bloodvenom Post, Bulwark
-        excludedNodes = {143, 156, 1297, 99, 1327, 770, 398, 410, 1539, 281, 647, 188, 631, 1704};
+        // Shadowprey Village, Revantusk Village, Flame Crest, Camp Mojache, Valormok, Bloodvenom Post, Bulwark, [PH] Teleport to Booty Bay
+        excludedNodes = {143, 156, 1297, 99, 1327, 770, 398, 410, 1539, 281, 647, 188, 631, 1704, 1810};
         if (level <= 6)
             locNames = {"Aldrassil", "Northshire", "Coldridge"};
         
@@ -1187,8 +1302,8 @@ std::vector<uint32> PlayerBotMgr::GetSafeTravelPoints(Team team, uint32 level){
     else if (team == HORDE){
         // Astranaar, Southshore, Stonetalon Peak, Refuge Pointe, Rebel Camp, Nijels Point,
         // Theramor Isle, Feathermoon Stronghold, Thalanaar, Talonbranch Glade, Talrendis Point, Morgans Vigil, Chillwind Camp,
-        // Lakeshire, Darkshire
-        excludedNodes = {118, 769, 1296, 101, 1338, 404, 538, 650, 666, 643, 180, 282, 1696, 1089, 509};
+        // Lakeshire, Darkshire, [PH] Teleport to Booty Bay
+        excludedNodes = {118, 769, 1296, 101, 1338, 404, 538, 650, 666, 643, 180, 282, 1696, 1089, 509, 1810};
         if (level <= 6)
             locNames = {"Valley of Trials", "Red Cloud Mesa", "Deathknell"};
 
@@ -2701,7 +2816,7 @@ bool ChatHandler::HandleWorldBotAddCommand(char * args){
         return false;
     }
 
-    uint8 botRace = SelectRandomRaceForClass(botClass, pPlayer->GetTeam());
+    uint8 botRace = SelectRandomRaceForClass(botClass, HORDE/*pPlayer->GetTeam()*/);
     if (!botRace)
     {
         SendSysMessage("Unable to select race for bot.");
@@ -2726,13 +2841,120 @@ bool ChatHandler::HandleWorldBotAddCommand(char * args){
     return true;
 }
 
+bool ChatHandler::HandleWorldBotTradeEnchantCommand(char * args){
+    Player* pPlayer = GetSession()->GetPlayer();
+    if (!pPlayer)
+        return false;
+
+    Player* pTarget = GetSelectedPlayer();
+    if (!pTarget){
+        SendSysMessage(LANG_NO_CHAR_SELECTED);
+        SetSentErrorMessage(true);
+        return false;
+    }
+    
+    if (!pTarget->AI()){
+        SendSysMessage("Selected target has no AI.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    WorldBotAI* pAI = dynamic_cast<WorldBotAI*>(pTarget->AI());
+    if (!pAI){
+        SendSysMessage("Selected target is not a world bot.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    if (pAI->GetCraftProfessionId() != SKILL_ENCHANTING){
+        SendSysMessage("Selected bot doesn't know enchanting.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    if (!pTarget->GetGroup() || !pPlayer->GetGroup() || pPlayer->GetGroup() != pTarget->GetGroup()){
+        SendSysMessage("The bot must be in your group first.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    uint32 spellId = 0;
+    ExtractUInt32(&args, spellId);
+    if (spellId){
+        pAI->CastEnchantSpell(spellId);
+        return true;
+    }
+    else if (char* arg = ExtractArg(&args)){
+        std::vector<const SpellEntry*> spells = pAI->GetProfessionSpellsFilterByRegex(std::string(arg));
+        std::string msg;
+
+        uint32 lang = 0;
+        if (pPlayer->GetTeam() == ALLIANCE)
+            lang = LANG_COMMON;
+        else if (pPlayer->GetTeam() == HORDE)
+            lang = LANG_ORCISH;
+        
+        if (spells.empty()){
+            msg = "No profession spells found for filter word \"" + std::string(arg) + "\".";
+            std::unique_ptr<WorldPackets::Chat::ChatMessage> data = std::make_unique<WorldPackets::Chat::ChatMessage>();
+            data->lang = lang;
+            data->whisperTargetOrChannel = pPlayer->GetName();
+            data->type = CHAT_MSG_WHISPER;
+            pTarget->GetSession()->QueuePacket(std::move(data));
+            return true;
+        }
+
+        msg = "Found profession spells for word \"" + std::string(arg) + "\":";
+        auto data = std::make_unique<WorldPackets::Chat::ChatMessage>();
+        data->message = msg;
+        data->lang = lang;
+        data->whisperTargetOrChannel = pPlayer->GetName();
+        data->type = CHAT_MSG_WHISPER;
+        pTarget->GetSession()->QueuePacket(std::move(data));
+        msg.clear();
+        int32 i = 1;
+        for (const auto& spell: spells){
+            if (i % 7 == 0){
+                data = std::make_unique<WorldPackets::Chat::ChatMessage>();
+                data->message = msg;
+                data->lang = lang;
+                data->whisperTargetOrChannel = pPlayer->GetName();
+                data->type = CHAT_MSG_WHISPER;
+                pTarget->GetSession()->QueuePacket(std::move(data));
+                msg.clear();
+                i = 1;
+            }
+            msg.append("[" + (spell->SpellName[0]) + "]" + " - " + std::to_string(spell->Id) + "; ");
+            i++;
+        }
+        if (!msg.empty()){
+            data = std::make_unique<WorldPackets::Chat::ChatMessage>();
+            data->message = msg;
+            data->lang = lang;
+            data->whisperTargetOrChannel = pPlayer->GetName();
+            data->type = CHAT_MSG_WHISPER;
+            pTarget->GetSession()->QueuePacket(std::move(data));
+        }
+        // pTarget->MonsterWhisper(msg.c_str(), GetSession()->GetPlayer());
+    }
+    else {
+        SendSysMessage("Incorrect syntax. Usage: .worldbot enchant <prof_spell_id | filter_word>");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    return true;
+
+}
+
 bool ChatHandler::HandleWorldBotRemoveCommand(char * args){
     Player* pPlayer = GetSession()->GetPlayer();
     if (!pPlayer)
         return false;
         
     if (char* all = ExtractArg(&args)){
-        sPlayerBotMgr.DeleteWorldBots();
+        if (std::string(all) == "all")
+            sPlayerBotMgr.DeleteWorldBots();
         return true;
     }
 
@@ -2776,7 +2998,7 @@ bool ChatHandler::HandleWorldBotFindPathCommand(char * args){
         SetSentErrorMessage(true);
         return false;
     }
-
+    
     std::vector<uint32> vec = sPlayerBotMgr.FindAStarPath(pTarget->GetTeam(), pTarget->GetMapId(), pTarget->GetPosition(),
         pPlayer->GetMapId(), pPlayer->GetPosition(), true, true, true, pTarget->GetLevel());
 
@@ -2843,36 +3065,56 @@ bool ChatHandler::HandleWorldBotSpawnCommand(char * args){
         }
         uint32 nodeId = SelectRandomContainerElement(vec);
         const TravelNode& node = sPlayerBotMgr.GetTravelNode(nodeId);
+        CombatBotRoles botRole = ROLE_INVALID;
         uint8 botClass = CLASS_WARRIOR;
-        CombatBotRoles botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_RANGE_DPS, ROLE_TANK /*, ROLE_HEALER */);
-        if (botRole == ROLE_MELEE_DPS){
-            std::vector<Classes> vec {CLASS_WARRIOR, CLASS_ROGUE, CLASS_DRUID};
-            if (botTeam == ALLIANCE)
-                vec.push_back(CLASS_PALADIN);
-            else
-                vec.push_back(CLASS_SHAMAN);
+        if (botTeam == ALLIANCE)
+            botClass = PickRandomValue(CLASS_WARRIOR, CLASS_PALADIN, CLASS_HUNTER, CLASS_ROGUE, CLASS_DRUID, CLASS_MAGE, CLASS_WARLOCK, CLASS_PRIEST);
+        else if (botTeam == HORDE)
+            botClass = PickRandomValue(CLASS_WARRIOR, CLASS_SHAMAN, CLASS_HUNTER, CLASS_ROGUE, CLASS_DRUID, CLASS_MAGE, CLASS_WARLOCK, CLASS_PRIEST);
+        
+        if (botClass == CLASS_WARRIOR)
+            botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_TANK);
+        else if (botClass == CLASS_PALADIN)
+            botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_HEALER);
+        else if (botClass == CLASS_SHAMAN)
+            botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_RANGE_DPS, ROLE_HEALER);
+        else if (botClass == CLASS_HUNTER || botClass == CLASS_MAGE || botClass == CLASS_WARLOCK)
+            botRole = ROLE_RANGE_DPS;
+        else if (botClass == CLASS_ROGUE)
+            botRole = ROLE_MELEE_DPS;
+        else if (botClass == CLASS_DRUID)
+            botRole = PickRandomValue(ROLE_RANGE_DPS, ROLE_HEALER, ROLE_MELEE_DPS);
+            
 
-            botClass = SelectRandomContainerElement(vec);
-        }
-        else if (botRole == ROLE_RANGE_DPS){
-            std::vector<Classes> vec {CLASS_WARLOCK, CLASS_MAGE, CLASS_PRIEST, CLASS_HUNTER, CLASS_DRUID};
-            if (botTeam == HORDE)
-                vec.push_back(CLASS_SHAMAN);
+        // CombatBotRoles botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_RANGE_DPS, ROLE_TANK /*, ROLE_HEALER */);
+        // if (botRole == ROLE_MELEE_DPS){
+        //     std::vector<Classes> vec {CLASS_WARRIOR, CLASS_ROGUE, CLASS_DRUID};
+        //     if (botTeam == ALLIANCE)
+        //         vec.push_back(CLASS_PALADIN);
+        //     else
+        //         vec.push_back(CLASS_SHAMAN);
 
-            botClass = SelectRandomContainerElement(vec);
-        }
-        else if (botRole == ROLE_TANK){
-            botClass = CLASS_WARRIOR;
-        }
-        else if (botRole == ROLE_HEALER){
-            std::vector<Classes> vec {CLASS_PRIEST, CLASS_DRUID};
-            if (botTeam == ALLIANCE)
-                vec.push_back(CLASS_PALADIN);
-            else
-                vec.push_back(CLASS_SHAMAN);
+        //     botClass = SelectRandomContainerElement(vec);
+        // }
+        // else if (botRole == ROLE_RANGE_DPS){
+        //     std::vector<Classes> vec {CLASS_WARLOCK, CLASS_MAGE, CLASS_PRIEST, CLASS_HUNTER, CLASS_DRUID};
+        //     if (botTeam == HORDE)
+        //         vec.push_back(CLASS_SHAMAN);
 
-            botClass = SelectRandomContainerElement(vec);
-        }
+        //     botClass = SelectRandomContainerElement(vec);
+        // }
+        // else if (botRole == ROLE_TANK){
+        //     botClass = CLASS_WARRIOR;
+        // }
+        // else if (botRole == ROLE_HEALER){
+        //     std::vector<Classes> vec {CLASS_PRIEST, CLASS_DRUID};
+        //     if (botTeam == ALLIANCE)
+        //         vec.push_back(CLASS_PALADIN);
+        //     else
+        //         vec.push_back(CLASS_SHAMAN);
+
+        //     botClass = SelectRandomContainerElement(vec);
+        // }
         uint8 botRace = SelectRandomRaceForClass(botClass, botTeam);
         WorldBotAI* pAI = new WorldBotAI(nullptr, nullptr, botRole, botRace, botClass, (uint8)botLevel, node.map_id, pPlayer->GetInstanceId(), node.x, node.y, node.z, frand(0.0f, 6.28f));
         pAI->m_safeSpawnNodes = vec;
@@ -2880,6 +3122,7 @@ bool ChatHandler::HandleWorldBotSpawnCommand(char * args){
             pAI->m_safeTravelPoints = vec;
         else
             pAI->m_safeTravelPoints = sPlayerBotMgr.GetSafeTravelPoints(botTeam, botLevel);
+        pAI->m_updateTimer.Reset(urand(250, 5000));
         if (!sPlayerBotMgr.AddBot(pAI))
         //     ;
         // else

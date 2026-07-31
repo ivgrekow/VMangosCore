@@ -5,7 +5,6 @@
 #include "Group.h"
 #include "ObjectAccessor.h"
 #include "PlayerBotMgr.h"
-#include "WorldBotAI.h"
 #include "Player.h"
 #include "CreatureAI.h"
 #include "MotionMaster.h"
@@ -17,6 +16,7 @@
 #include "SpellAuras.h"
 #include "Chat.h"
 #include "Utilities/Random.h"
+#include "TradeData.h"
 
 #include <random>
 
@@ -110,6 +110,18 @@ public:
     float m_o = 0.0f;
     bool m_resetSpellData = false;
 
+    // professions
+    void PopulateProfessionSpells();
+    void CastEnchantSpell(uint32 spellId);
+    void AddAllProfessionSpellReagents(uint32 id);
+    void AddAllProfessionSpellTotems(uint32 id);
+    std::vector<const SpellEntry*> GetProfessionSpellsFilterByRegex(std::string filter) const;
+    inline uint32 GetGatherProfessionId() const { return m_gatherProfession; }
+    inline uint32 GetCraftProfessionId() const { return m_craftProfession; }
+
+    uint32 m_gatherProfession = 0;
+    uint32 m_craftProfession = 0;
+    std::vector<const SpellEntry*> m_professionBook;
     bool m_deathAccepted = false;
     Unit* m_primaryTarget = nullptr;
     std::list<Unit*> m_CCTargets;
@@ -129,6 +141,7 @@ public:
             m_targetPos = Position();
         }
     }
+    
 };
 
 #endif

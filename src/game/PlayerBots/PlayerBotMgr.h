@@ -213,6 +213,8 @@ class PlayerBotMgr
         std::vector<TravelNodeLink> m_travelNodeLinks;
         std::vector<TravelNodePath> m_travelNodePaths;
         std::vector<TaxiFlightNodeInfo> m_taxiFlightNodeInfo;
+
+        ShortTimeTracker m_statsTimer;
 };
 
 #define sPlayerBotMgr MaNGOS::Singleton<PlayerBotMgr>::Instance()

@@ -728,7 +728,7 @@ void WorldBotAI::UpdateAI(uint32 const diff)
             botEntry->requestRemoval = true;
             return;
         }
-        const TravelNode& node = sPlayerBotMgr.GetTravelNode(SelectRandomContainerElement(m_safeTravelPoints));
+        const TravelNode& node = sPlayerBotMgr.GetTravelNode(SelectRandomContainerElement(m_safeSpawnNodes));
         map_id = node.map_id;
         x = node.x;
         y = node.y;
@@ -753,6 +753,12 @@ void WorldBotAI::UpdateAI(uint32 const diff)
         return;
     }
 
+    if (me->IsSwimming()){
+        me->UpdateSpeed(MOVE_SWIM, false);
+    }
+    else
+        me->UpdateSpeed(MOVE_RUN, false);
+
     if (me->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
     {
         // Stop auto shot if no target.
@@ -769,11 +775,85 @@ void WorldBotAI::UpdateAI(uint32 const diff)
         return;
     }
 
-    if (me->IsNonMeleeSpellCasted(false, false, true))
-        return;
-
     if (me->GetTargetGuid() == me->GetObjectGuid())
         me->ClearTarget();
+
+    // Ratchet, Gadgetzan, Everlook, Booty Bay, Moonglade, Light's Hope, Cenarion Hold
+    std::set<uint32> neutralAreas {392, 976, 2255, 35, 493, 2268, 3425};
+    Unit* pVictim = me->GetVictim();
+
+    if (m_primaryTarget && (!m_primaryTarget->IsWithinDist(me, VISIBILITY_DISTANCE_NORMAL) || !IsValidHostileTarget(m_primaryTarget)))
+    {
+        me->AttackStop();
+        me->ClearTarget();
+        me->StopMoving();
+        // if (m_primaryTarget == pVictim)
+        m_primaryTarget = nullptr;
+        // if (pVictim = SelectAttackTarget(pVictim))
+        //     AttackStart(pVictim);
+        // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ Reset m_primaryTarget ...");
+        return;
+    }
+    
+    if (!m_primaryTarget){
+        std::list<Unit*> targets;
+        std::list<Unit*> units;
+        me->GetEnemyListInRadiusAround(me, VISIBILITY_DISTANCE_NORMAL, units);
+        for (const auto& unit: units){
+            if (!unit->IsPlayer())
+                continue;
+
+            if (neutralAreas.count(unit->GetAreaId()))
+                continue;
+
+            if (me->GetLevel() > unit->GetLevel() + 5 || me->GetLevel() + 5 < unit->GetLevel())
+                continue;
+                // if (!(unit->GetVictim() == me && unit->IsNonMeleeSpellCasted()))
+
+            if (!IsValidHostileTarget(unit))
+                continue;
+
+            if (!me->IsWithinDist(unit, 40.0f))
+                continue;
+
+            if (!unit->IsWithinLOSInMap(me))
+                continue;
+
+            targets.push_back(unit);
+        }
+
+        // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, " ______ Players around:");
+        // for (const auto& target: targets)
+        //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "\t %s", target->GetName());
+
+        if (!targets.empty()){
+            targets.sort([this](Unit* a, Unit* b){
+                return me->GetDistance(a) < me->GetDistance(b);
+            });
+            if (!m_primaryTarget){
+                m_primaryTarget = targets.front();
+                AttackStart(m_primaryTarget);
+                // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "--- attacking %s", m_primaryTarget->GetName());
+                return;
+            }
+        }
+    }
+
+    if (m_primaryTarget){
+        AttackStart(m_primaryTarget);
+
+        if (me->IsInCombat())
+            UpdateInCombatAI();
+        else
+            UpdateOutOfCombatAI();
+
+        if (!me->HasInArc(m_primaryTarget, 2 * M_PI_F / 3) && !me->IsMoving()){
+            me->SetInFront(m_primaryTarget);
+            me->SendMovementPacket(MSG_MOVE_SET_FACING, false);
+        }
+
+        return;
+    }
 
     Player* pLeader = nullptr;
     if (me->GetGroup())
@@ -783,95 +863,17 @@ void WorldBotAI::UpdateAI(uint32 const diff)
         m_leaderGuid = ObjectGuid();
     else
         m_leaderGuid = pLeader->GetObjectGuid();
-
-    Unit* pVictim = me->GetVictim();
-
-    // Prevent worldbot from chasing target entered stealth mode
-    if (pVictim && !pVictim->IsVisibleForOrDetect(me, me, false))
-    {
-        me->AttackStop();
-        me->ClearTarget();
-        me->StopMoving();
-        if (m_primaryTarget == pVictim)
-            m_primaryTarget = nullptr;
-        // if (pVictim = SelectAttackTarget(pVictim))
-        //     AttackStart(pVictim);
-        return;
-    }
-
-    if (!m_primaryTarget){
-        std::list<Player*> players;
-        me->GetAlivePlayerListInRange(me, players, VISIBILITY_DISTANCE_NORMAL);
-        for (const auto& pTarget: players){
-            if (!IsValidHostileTarget(pTarget))
-                continue;
-
-            if (!me->IsWithinDist(pTarget, 50.0f))
-                continue;
-            
-            if (me->GetDistanceZ(pTarget) > 10.0f)
-                continue;
-
-            if (!me->IsWithinLOSInMap(pTarget))
-                continue;
-
-            if (pTarget->GetLevel() - m_level > 5){
-                if (!pTarget->IsNonMeleeSpellCasted() || pTarget->GetSelectedPlayer() != me || pTarget->GetVictim() != me)
-                    continue;
-            }
-
-            m_primaryTarget = pTarget;
-            AttackStart(m_primaryTarget);
-            return;
-        }
-    }
     
-    if (m_primaryTarget){
-        if (!IsValidHostileTarget(m_primaryTarget) || !me->IsWithinDist3d(m_primaryTarget->GetPosition(), VISIBILITY_DISTANCE_NORMAL)){
-            m_primaryTarget = nullptr;
-            return;
-        }
-
-        if (!me->HasInArc(pVictim, 2 * M_PI_F / 3) && !me->IsMoving())
-        {
-            me->SetInFront(pVictim);
-            me->SendMovementPacket(MSG_MOVE_SET_FACING, false);
-        }
-
-        if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != CHASE_MOTION_TYPE)
-            BeginChasing(pVictim);
-
-        if (me->IsInCombat())
-            UpdateInCombatAI();
-        else
-            UpdateOutOfCombatAI();
-
-        return;        
-    }
-
     if (!pVictim){
         pVictim = SelectAttackTarget(pLeader);
         if (pVictim){
             AttackStart(pVictim);
             return;
         }
+
+        // if no pVictim we just jump to traveling mode
     }
-
-    if (pVictim){
-        if (!IsValidHostileTarget(pVictim)){
-            me->AttackStop();
-            me->StopMoving();
-            return;
-        }
-        else
-            AttackStart(pVictim);
-
-        if (!me->HasInArc(pVictim, 2 * M_PI_F / 3) && !me->IsMoving())
-        {
-            me->SetInFront(pVictim);
-            me->SendMovementPacket(MSG_MOVE_SET_FACING, false);
-        }
-
+    else if (pVictim){
         if (me->IsInCombat())
             UpdateInCombatAI();
         else
@@ -880,10 +882,13 @@ void WorldBotAI::UpdateAI(uint32 const diff)
         return;
     }
 
+    // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ Before tha main cycle ...");
+    
+    
     
     UpdateOutOfCombatAI();
-
-    if (me->IsInCombat() && (pVictim || m_primaryTarget))
+    
+    if (me->IsInCombat() && pVictim)
         return;
 
     if (!me->IsInCombat() && DrinkAndEat())
@@ -1040,7 +1045,8 @@ void WorldBotAI::UpdateAI(uint32 const diff)
             
             ClearTravelData();
             m_currentNodeIndex++;
-            
+            if (link.to_node_id == 1567 && me->GetTeam() == HORDE)
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "_____ Flying to 1567. link.object = %d, taxi entry id, node, to_node: %d, %d, %d.", link.object, taxiEntry->ID, taxiEntry->from, taxiEntry->to);
         }
         else if (link.type == PATH_TYPE_AREATRIGGER){
             me->GetMotionMaster()->Clear(false, true);
@@ -2908,8 +2914,14 @@ bool WorldBotAI::ShouldEnterStealth() const
             return true;
     }
 
-    if (me->GetEnemyCountInRadiusAround(me, 35.0f))
-        return true;
+    std::list<Unit*> enemies;
+    me->GetEnemyListInRadiusAround(me, 35.0f, enemies);
+    for (const auto& enemy: enemies){
+        if (enemy->IsVisibleForOrDetect(me, me, true, false))
+            return true;
+    }
+    // if (me->GetEnemyCountInRadiusAround(me, 35.0f))
+    //     return true;
 
     return false;
 }
@@ -3645,7 +3657,263 @@ void WorldBotAI::Initialize() {
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ my safe travel points dont exist. Calling sPlayerBotMgr...");
         m_safeTravelPoints = sPlayerBotMgr.GetSafeTravelPoints(me->GetTeam(), m_level);
     }
+    PopulateProfessionSpells();
 
     m_initialized = true;
     return;
+}
+
+void WorldBotAI::PopulateProfessionSpells() {
+    // gathering skill
+    std::vector<uint32> skillVector {SKILL_MINING, SKILL_SKINNING, SKILL_HERBALISM};
+    uint32 gatherSkillId = SelectRandomContainerElement(skillVector);
+    m_gatherProfession = gatherSkillId;
+    SkillLineAbilityMapBounds skillMapBounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySkillId(gatherSkillId);
+    std::vector<uint32> spellVector;
+    for (auto it = skillMapBounds.first; it != skillMapBounds.second; ++it){
+        spellVector.push_back(it->second->spellId);
+    }
+    if (spellVector.size()){
+        uint32 skillLevel = me->GetLevel() * 5 + urand(5, 25);
+        float normalizedLevel = skillLevel / 300.0f;
+        if (normalizedLevel > 1.0f)
+            normalizedLevel = 1.0f;
+    
+        uint32 maxIndex = static_cast<uint32>(std::round(normalizedLevel * (spellVector.size() - 1)));
+        for (uint32 i=0; i != maxIndex; ++i){
+            me->LearnSpell(spellVector[i], false);
+            m_professionBook.push_back(sSpellMgr.GetSpellEntry(spellVector[i]));
+            // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::PopulateProffessionSpells : adding spell #%d, name \"%s\"", sSpellMgr.GetSpellEntry(spellVector[i])->Id, sSpellMgr.GetSpellEntry(spellVector[i])->SpellName[0].c_str());
+        }
+    }
+
+    skillVector.clear();
+
+    // crafting skill
+    uint32 craftSkillId = SKILL_NONE;
+    switch (gatherSkillId){
+        case SKILL_MINING:
+        {
+            skillVector = {SKILL_ENGINEERING, SKILL_BLACKSMITHING, SKILL_ENCHANTING};
+            break;
+        }
+        case SKILL_HERBALISM:
+        {
+            // increased probability for alchemy
+            skillVector = {SKILL_ALCHEMY, SKILL_ALCHEMY, SKILL_ENCHANTING};
+            break;
+        }
+        case SKILL_SKINNING:
+        {
+            // increased probability for leatherworking
+            skillVector = {SKILL_LEATHERWORKING, SKILL_LEATHERWORKING, SKILL_ENCHANTING};
+            break;
+        }
+        default:
+            skillVector = {SKILL_ENCHANTING};
+            // nonsense
+            // return;
+    }
+    
+    craftSkillId = SelectRandomContainerElement(skillVector);
+    m_craftProfession = craftSkillId;
+    skillMapBounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySkillId(craftSkillId);
+    
+    for (auto it = skillMapBounds.first; it != skillMapBounds.second; ++it){
+        spellVector.push_back(it->second->spellId);
+    }
+
+    if (spellVector.size()){
+        uint32 skillLevel = me->GetLevel() * 5 + urand(5, 25);
+        float normalizedLevel = skillLevel / 300.0f;
+        if (normalizedLevel > 1.0f)
+            normalizedLevel = 1.0f;
+            
+        uint32 maxIndex = static_cast<uint32>(std::round(normalizedLevel * (spellVector.size() - 1)));
+        for (uint32 i=0; i != maxIndex; ++i){
+            const SpellEntry* pSpellEntry = sSpellMgr.GetSpellEntry(spellVector[i]);
+            me->LearnSpell(spellVector[i], false);
+            m_professionBook.push_back(sSpellMgr.GetSpellEntry(spellVector[i]));
+        }
+    }
+}
+
+void WorldBotAI::CastEnchantSpell(uint32 id){
+    const SpellEntry* pSpellEntry = nullptr;
+    for (auto spell: m_professionBook){
+        if (spell->Id == id){
+            // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::CastProfessionSpell : found spell #%d, name \"%s\".", id, spell->SpellName[0].c_str());
+            pSpellEntry = spell;
+        }
+    }
+
+    TradeData* my_trade = me->GetTradeData();
+    if (!my_trade){
+        // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::CastProfessionSpell : no trade data found.");
+        return;
+    }
+
+    Player* pTrader = my_trade->GetTrader();
+    if (!pTrader){
+        // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::CastProfessionSpell : no trader player found.");
+        return;
+    }
+
+    TradeData* his_trade = my_trade->GetTraderData();
+    // if (!his_trade){
+    //     // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::CastProfessionSpell : no trader data found.");
+    //     return;
+    // }
+
+    uint32 lang = 0;
+    if (pTrader->GetTeam() == ALLIANCE)
+        lang = LANG_COMMON;
+    else if (pTrader->GetTeam() == HORDE)
+        lang = LANG_ORCISH;
+
+    if (!my_trade || !his_trade){
+        std::string msg = "You should open trade with me first.";
+        auto data = std::make_unique<WorldPackets::Chat::ChatMessage>();
+        data->lang = lang;
+        data->message = msg;
+        data->whisperTargetOrChannel = pTrader->GetName();
+        data->type = CHAT_MSG_WHISPER;
+        me->GetSession()->QueuePacket(std::move(data));
+        return;
+    }
+    
+    if (!pSpellEntry || !me->HasSpell(pSpellEntry->Id)){
+        // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::CastProfessionSpell : no spells found for #%d.", id);
+        std::string msg = "I can't find any profession spell for id #"+ std::to_string(id) + ".";
+        auto data = std::make_unique<WorldPackets::Chat::ChatMessage>();
+        data->lang = lang;
+        data->message = msg;
+        data->whisperTargetOrChannel = pTrader->GetName();
+        data->type = CHAT_MSG_WHISPER;
+        me->GetSession()->QueuePacket(std::move(data));
+        return;
+    }
+
+    if (pTrader->GetSession()->GetSecurity() == SEC_ADMINISTRATOR){
+        AddAllProfessionSpellReagents(id);
+    }
+    else {
+        bool notEnoughReagents = false;
+        std::vector<uint32> reagentCounts(MAX_SPELL_REAGENTS, 0);
+        for (int i=0; i < MAX_SPELL_REAGENTS; ++i){
+            if (pSpellEntry->Reagent[i])
+                reagentCounts[i] = me->GetItemCount(pSpellEntry->Reagent[i]);
+
+            if (!notEnoughReagents && reagentCounts[i] < pSpellEntry->ReagentCount[i])
+                notEnoughReagents = true;
+        }
+
+        if (notEnoughReagents){
+            std::string msg = "I'm still missing some reagents for the recipe [" + pSpellEntry->SpellName[0] + "] - " + 
+            std::to_string(pSpellEntry->Id) + ". My current reagents are:";
+
+            uint32 lang = 0;
+            if (pTrader->GetTeam() == ALLIANCE)
+                lang = LANG_COMMON;
+            else if (pTrader->GetTeam() == HORDE)
+                lang = LANG_ORCISH;
+            
+            auto data = std::make_unique<WorldPackets::Chat::ChatMessage>();
+            data->message = msg;
+            data->lang = lang;
+            data->whisperTargetOrChannel = pTrader->GetName();
+            data->type = CHAT_MSG_WHISPER;
+            me->GetSession()->QueuePacket(std::move(data));
+            for (int i=0; i < MAX_SPELL_REAGENTS; ++i){
+                const ItemPrototype* reagentProto = sObjectMgr.GetItemPrototype(pSpellEntry->Reagent[i]);
+                if (!reagentProto){
+                    continue;
+                }
+                msg = "[" + std::string(reagentProto->Name1) + "] - " + std::to_string(reagentCounts[i]) + "/" + 
+                    std::to_string(pSpellEntry->ReagentCount[i]);
+                data = std::make_unique<WorldPackets::Chat::ChatMessage>();
+                data->message = msg;
+                data->lang = lang;
+                data->whisperTargetOrChannel = pTrader->GetName();
+                data->type = CHAT_MSG_WHISPER;
+                me->GetSession()->QueuePacket(std::move(data));
+            }
+            return;
+        }
+    }
+
+    AddAllProfessionSpellTotems(id);
+
+    Item* pItem = his_trade->GetItem(TRADE_SLOT_NONTRADED);
+    if (m_craftProfession == SKILL_ENCHANTING){
+        if (!pItem){
+            // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::CastProfessionSpell : no non-trade item found.");
+            std::string msg {"I can't see your item to enchant. Place it to non-trade slot first."};
+            me->MonsterWhisper(msg.c_str(), pTrader);
+            return;
+        }
+        my_trade->SetSpell(id);
+    }
+}
+
+void WorldBotAI::AddAllProfessionSpellReagents(uint32 id){
+    const SpellEntry* spellEntry = nullptr;
+    for (const auto& pSpell: m_professionBook){
+        if (!pSpell)
+            continue;
+        
+        if (pSpell->Id == id){
+            spellEntry = pSpell;
+            break;
+        }
+    }
+
+    // for (const auto& reagent : spellEntry->Reagent)
+    for (int i=0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (spellEntry->Reagent[i] && !me->HasItemCount(spellEntry->Reagent[i], spellEntry->ReagentCount[i])){
+            AddItemToInventory(spellEntry->Reagent[i], spellEntry->ReagentCount[i]);
+            // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::AddProffessionSpellReagents : adding item \"%s\" to inventory; %d units.", sObjectMgr.GetItemPrototype(reagent)->Name1, spellEntry->ReagentCount[index]);
+        }
+    }
+}
+
+void WorldBotAI::AddAllProfessionSpellTotems(uint32 id) {
+    const SpellEntry* spellEntry = nullptr;
+    for (const auto& pSpell: m_professionBook){
+        if (!pSpell)
+            continue;
+        
+        if (pSpell->Id == id){
+            spellEntry = pSpell;
+            break;
+        }
+    }
+    
+    uint8 index = 0;
+    for (const auto& totem : spellEntry->Totem)
+    {
+        if (totem && !me->HasItemCount(totem, 1))
+        {    
+            AddItemToInventory(totem);
+            // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::AddProffessionSpellReagents : adding item \"%s\" to inventory.", sObjectMgr.GetItemPrototype(totem)->Name1);
+        }
+        index++;
+    }
+}
+
+std::vector<const SpellEntry*> WorldBotAI::GetProfessionSpellsFilterByRegex(std::string filter) const {
+    std::vector<const SpellEntry*> result;
+
+    if (filter.empty())
+        return result;
+
+    std::regex pattern {filter};
+    for (auto spellEntry: m_professionBook){
+        if (std::regex_search(spellEntry->SpellName[0], pattern))
+            result.push_back(spellEntry);
+    }
+
+    return result;
+
 }
