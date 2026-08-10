@@ -993,7 +993,7 @@ std::vector<uint32> PlayerBotMgr::FindAStarPath(Team team, uint32 startMapId, Po
         }
         
         // Получаем соседей
-        std::vector<TravelNodeLink> neighbours = GetTravelNodeLinksById(team, current.node.id, includeFlightPath, includeAreaTrigger, includeTransport, maxCreatureLevel);
+        std::vector<TravelNodeLink> neighbours = GetTravelNodeLinksById(team, current.node.id, includeFlightPath, includeAreaTrigger, includeTransport, maxCreatureLevel+3);
         
         for (const auto& nodeLink : neighbours){
             if (excludedNodes.count(nodeLink.to_node_id))
@@ -2816,7 +2816,14 @@ bool ChatHandler::HandleWorldBotAddCommand(char * args){
         return false;
     }
 
-    uint8 botRace = SelectRandomRaceForClass(botClass, HORDE/*pPlayer->GetTeam()*/);
+    uint32 exTeam = 0;
+    Team team;
+    ExtractUInt32(&args, exTeam);
+    if (exTeam)
+        team = HORDE;
+    else
+        team = pPlayer->GetTeam();
+    uint8 botRace = SelectRandomRaceForClass(botClass, team/*pPlayer->GetTeam()*/);
     if (!botRace)
     {
         SendSysMessage("Unable to select race for bot.");
@@ -3017,9 +3024,9 @@ bool ChatHandler::HandleWorldBotFindPathCommand(char * args){
 }
 
 bool ChatHandler::HandleWorldBotSpawnCommand(char * args){
-    Player* pPlayer = GetSession()->GetPlayer();
-    if (!pPlayer)
-        return false;
+    // Player* pPlayer = GetSession()->GetPlayer();
+    // if (!pPlayer)
+    //     return false;
 
     uint32 minLevel = 0;
     ExtractUInt32(&args, minLevel);
@@ -3069,54 +3076,28 @@ bool ChatHandler::HandleWorldBotSpawnCommand(char * args){
         uint8 botClass = CLASS_WARRIOR;
         if (botTeam == ALLIANCE)
             botClass = PickRandomValue(CLASS_WARRIOR, CLASS_PALADIN, CLASS_HUNTER, CLASS_ROGUE, CLASS_DRUID, CLASS_MAGE, CLASS_WARLOCK, CLASS_PRIEST);
+            // botClass = PickRandomValue(CLASS_WARLOCK, CLASS_WARRIOR);
         else if (botTeam == HORDE)
             botClass = PickRandomValue(CLASS_WARRIOR, CLASS_SHAMAN, CLASS_HUNTER, CLASS_ROGUE, CLASS_DRUID, CLASS_MAGE, CLASS_WARLOCK, CLASS_PRIEST);
+            // botClass = PickRandomValue(CLASS_WARLOCK, CLASS_WARRIOR);
         
         if (botClass == CLASS_WARRIOR)
             botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_TANK);
         else if (botClass == CLASS_PALADIN)
             botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_HEALER);
         else if (botClass == CLASS_SHAMAN)
-            botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_RANGE_DPS, ROLE_HEALER);
+            botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_RANGE_DPS /*, ROLE_HEALER */);
         else if (botClass == CLASS_HUNTER || botClass == CLASS_MAGE || botClass == CLASS_WARLOCK)
             botRole = ROLE_RANGE_DPS;
         else if (botClass == CLASS_ROGUE)
             botRole = ROLE_MELEE_DPS;
         else if (botClass == CLASS_DRUID)
-            botRole = PickRandomValue(ROLE_RANGE_DPS, ROLE_HEALER, ROLE_MELEE_DPS);
-            
-
-        // CombatBotRoles botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_RANGE_DPS, ROLE_TANK /*, ROLE_HEALER */);
-        // if (botRole == ROLE_MELEE_DPS){
-        //     std::vector<Classes> vec {CLASS_WARRIOR, CLASS_ROGUE, CLASS_DRUID};
-        //     if (botTeam == ALLIANCE)
-        //         vec.push_back(CLASS_PALADIN);
-        //     else
-        //         vec.push_back(CLASS_SHAMAN);
-
-        //     botClass = SelectRandomContainerElement(vec);
-        // }
-        // else if (botRole == ROLE_RANGE_DPS){
-        //     std::vector<Classes> vec {CLASS_WARLOCK, CLASS_MAGE, CLASS_PRIEST, CLASS_HUNTER, CLASS_DRUID};
-        //     if (botTeam == HORDE)
-        //         vec.push_back(CLASS_SHAMAN);
-
-        //     botClass = SelectRandomContainerElement(vec);
-        // }
-        // else if (botRole == ROLE_TANK){
-        //     botClass = CLASS_WARRIOR;
-        // }
-        // else if (botRole == ROLE_HEALER){
-        //     std::vector<Classes> vec {CLASS_PRIEST, CLASS_DRUID};
-        //     if (botTeam == ALLIANCE)
-        //         vec.push_back(CLASS_PALADIN);
-        //     else
-        //         vec.push_back(CLASS_SHAMAN);
-
-        //     botClass = SelectRandomContainerElement(vec);
-        // }
+            botRole = PickRandomValue(ROLE_RANGE_DPS, /*ROLE_HEALER,*/ ROLE_MELEE_DPS);
+        else if (botClass == CLASS_PRIEST)
+            botRole = PickRandomValue(ROLE_RANGE_DPS /*, ROLE_HEALER*/);
+        
         uint8 botRace = SelectRandomRaceForClass(botClass, botTeam);
-        WorldBotAI* pAI = new WorldBotAI(nullptr, nullptr, botRole, botRace, botClass, (uint8)botLevel, node.map_id, pPlayer->GetInstanceId(), node.x, node.y, node.z, frand(0.0f, 6.28f));
+        WorldBotAI* pAI = new WorldBotAI(nullptr, nullptr, botRole, botRace, botClass, (uint8)botLevel, node.map_id, 0, node.x, node.y, node.z, frand(0.0f, 6.28f));
         pAI->m_safeSpawnNodes = vec;
         if (isGanker)
             pAI->m_safeTravelPoints = vec;
@@ -3124,8 +3105,6 @@ bool ChatHandler::HandleWorldBotSpawnCommand(char * args){
             pAI->m_safeTravelPoints = sPlayerBotMgr.GetSafeTravelPoints(botTeam, botLevel);
         pAI->m_updateTimer.Reset(urand(250, 5000));
         if (!sPlayerBotMgr.AddBot(pAI))
-        //     ;
-        // else
         {
             delete pAI;
             SendSysMessage("Error spawning bot.");

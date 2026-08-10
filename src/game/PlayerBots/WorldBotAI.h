@@ -17,13 +17,13 @@
 #include "Chat.h"
 #include "Utilities/Random.h"
 #include "TradeData.h"
+#include "Geometry.h"
 
 #include <random>
 
 #include <regex>
 
 class WorldBotAI : public CombatBotBaseAI {
-public:
     public:
 
     WorldBotAI(Player* pLeader, Player* pClone, CombatBotRoles role, uint8 race, uint8 class_, uint8 level, uint32 mapId, uint32 instanceId, float x, float y, float z, float o)
@@ -110,6 +110,12 @@ public:
     float m_o = 0.0f;
     bool m_resetSpellData = false;
 
+    
+    
+
+    // navigation
+    Position GetPolarPositionForObject(WorldObject* object, float distance, float angle);
+
     // professions
     void PopulateProfessionSpells();
     void CastEnchantSpell(uint32 spellId);
@@ -125,6 +131,8 @@ public:
     bool m_deathAccepted = false;
     Unit* m_primaryTarget = nullptr;
     std::list<Unit*> m_CCTargets;
+
+    // traveling and path finding
     Position m_targetPos;
     std::vector<uint32> m_safeTravelPoints;
     std::vector<uint32> m_safeSpawnNodes;
@@ -141,7 +149,16 @@ public:
             m_targetPos = Position();
         }
     }
-    
+
+    // combat
+    ShortTimeTracker m_debugTimer;
+
+    // spells
+    void PopulateSpellData();
+    void SummonRandomPet();
+    bool CanPetTryToCastSpell(Unit* pTarget, const SpellEntry* pSpellEntry);
+    void UpdateOutOfCombatPets();
+    void UpdateInCombatPets();
 };
 
 #endif

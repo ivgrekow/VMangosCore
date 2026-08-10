@@ -173,7 +173,6 @@ bool WorldBotAI::RunAwayFromTarget(Unit* pEnemy)
         me->MonsterMove(pTarget->GetPositionX(), pTarget->GetPositionY(), pTarget->GetPositionZ());
         return true;
     }
-
     return me->GetMotionMaster()->MoveDistance(pEnemy, 15.0f);
 }
 
@@ -657,16 +656,14 @@ void WorldBotAI::OnPlayerLogin()
 
 void WorldBotAI::UpdateAI(uint32 const diff)
 {
-    if (!m_updateTimer.Passed()){
-        m_updateTimer.Update(diff);
+    m_updateTimer.Update(diff);
+    if (!m_updateTimer.Passed())
         return;
-    }
-    else
-        m_updateTimer.Reset(WB_UPDATE_INTERVAL);
+    m_updateTimer.Reset(WB_UPDATE_INTERVAL);
 
     if (!me->IsInWorld() || me->IsBeingTeleported() || me->IsTaxiFlying())
         return;
-
+        
     if (!m_initialized){
         Initialize();
         return;
@@ -678,6 +675,25 @@ void WorldBotAI::UpdateAI(uint32 const diff)
         PopulateSpellData();
         m_resetSpellData = false;
     }
+
+    // debugging stuck bots
+    if (!me->GetGroup()){
+        m_debugTimer.Update(diff);
+        if (m_debugTimer.Passed()){
+            uint32 node_id = SelectRandomContainerElement(m_safeTravelPoints);
+            const TravelNode& node = sPlayerBotMgr.GetTravelNode(node_id);
+            ClearTravelData(true);
+            me->AttackStop();
+            me->StopMoving();
+            me->TeleportTo(node.map_id, node.x, node.y, node.z, frand(0.0f, 6.28f));
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::UpdateAI : bot \"%s\" was inactive 3 minutes; teleported to node #%d \"%s\".", me->GetName(), node.id, node.name.c_str());
+            m_debugTimer.Reset(180000);
+        }
+    }
+    // debugging stuck bots
+    if (!me->GetGroup() && me->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE)
+        m_debugTimer.Reset(180000);
+    
 
     if (me->GetDeathState() == CORPSE)
     {
@@ -699,14 +715,31 @@ void WorldBotAI::UpdateAI(uint32 const diff)
         float x, y, z;
         uint32 map_id = me->GetMapId();
         float restorePercent = 0.5f;
-        if (GetPartyLeader()){
+        if (Player* pLeader = GetPartyLeader()){
             Corpse* pCorpse = me->GetCorpse();
             if (!pCorpse){
                 sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : can't get my corpse.");
                 botEntry->requestRemoval = true;
                 return;
             }
-            pCorpse->GetNearPoint(pCorpse, x, y, z, 0, 25.0f, 0.0f);
+            map_id = pCorpse->GetMapId();
+            if (pLeader->IsAlive() && pLeader->IsWithinDist(pCorpse, 40.0f)){
+                // float dx = pLeader->GetPositionX() - pCorpse->GetPositionX();
+                // float dy = pLeader->GetPositionY() - pCorpse->GetPositionY();
+                // float angle = std::atan2(dy, dx);
+                float angle = pCorpse->GetAngle(pLeader);
+
+                float distance = pCorpse->GetDistance2dToCenter(pLeader->GetPosition());
+                if (distance > 40.0f)
+                    distance = 40.0f;
+                // pCorpse->GetClosePoint(x, y, z, 0, 40.0f, angle);
+                x = pCorpse->GetPositionX() + distance * std::cos(angle);
+                y = pCorpse->GetPositionY() + distance * std::sin(angle);
+                z = pCorpse->GetMap()->GetHeight(x, y, pCorpse->GetPositionZ());
+            }
+            else
+                pCorpse->GetNearPoint(pCorpse, x, y, z, 0, 40.0f, 0.0f);
+            
             if (map_id != me->GetMapId())
                 ClearTravelData(true);
             me->TeleportTo(map_id, x, y, z, frand(0.0f, 6.28f));
@@ -725,7 +758,6 @@ void WorldBotAI::UpdateAI(uint32 const diff)
         if (m_safeSpawnNodes.empty()){
             botEntry->requestRemoval = true;
             sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : can't get safe spawn nodes.");
-            botEntry->requestRemoval = true;
             return;
         }
         const TravelNode& node = sPlayerBotMgr.GetTravelNode(SelectRandomContainerElement(m_safeSpawnNodes));
@@ -759,21 +791,7 @@ void WorldBotAI::UpdateAI(uint32 const diff)
     else
         me->UpdateSpeed(MOVE_RUN, false);
 
-    if (me->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
-    {
-        // Stop auto shot if no target.
-        if (!me->GetVictim())
-            me->InterruptSpell(CURRENT_AUTOREPEAT_SPELL, true);
-        else if (me->GetClass() == CLASS_HUNTER)
-        {
-            if (me->GetCombatDistance(me->GetVictim()) < 8.0f)
-                me->InterruptSpell(CURRENT_AUTOREPEAT_SPELL, true);
-            else
-                UpdateInCombatAI_Hunter();
-        }
-
-        return;
-    }
+    
 
     if (me->GetTargetGuid() == me->GetObjectGuid())
         me->ClearTarget();
@@ -840,16 +858,29 @@ void WorldBotAI::UpdateAI(uint32 const diff)
     }
 
     if (m_primaryTarget){
-        AttackStart(m_primaryTarget);
+        // if (pVictim->GetObjectGuid() != me->GetTargetGuid())
+        //     me->SetTargetGuid(pVictim->GetObjectGuid());
 
-        if (me->IsInCombat())
-            UpdateInCombatAI();
-        else
-            UpdateOutOfCombatAI();
+        
 
         if (!me->HasInArc(m_primaryTarget, 2 * M_PI_F / 3) && !me->IsMoving()){
             me->SetInFront(m_primaryTarget);
             me->SendMovementPacket(MSG_MOVE_SET_FACING, false);
+        }
+        
+        if (me->IsNonMeleeSpellCasted(false, false, true))
+            return;
+
+        AttackStart(m_primaryTarget);
+        UpdateInCombatPets();
+
+        if (me->IsInCombat()){
+            UpdateInCombatAI();
+            // UpdateInCombatPets();
+        }
+        else{
+            UpdateOutOfCombatAI();
+            // UpdateOutOfCombatPets();
         }
 
         return;
@@ -865,6 +896,39 @@ void WorldBotAI::UpdateAI(uint32 const diff)
         m_leaderGuid = pLeader->GetObjectGuid();
     
     if (!pVictim){
+        std::list<Unit*> enemies;
+        std::list<Unit*> targets;
+        me->GetEnemyListInRadiusAround(me, 35.0f, enemies);
+        for (const auto& creature: enemies){
+            if (neutralAreas.count(creature->GetAreaId()))
+                continue;
+
+            if (!creature->IsCreature() || creature->GetReactionTo(me) == REP_NEUTRAL)
+                continue;
+
+            if (creature->IsInCombat() && creature->GetVictim() != me)
+                continue;
+
+            if (!me->HasInArc(creature, M_PI_F / 3))
+                continue;
+
+            if (!IsValidHostileTarget(creature))
+                continue;
+
+            if (!creature->IsWithinLOSInMap(me))
+                continue;
+
+            targets.push_back(creature);
+        }
+        if (!targets.empty()){
+            targets.sort([this](Unit* a, Unit* b){
+                return me->GetDistance(a) < me->GetDistance(b);
+            });
+            Unit* target = targets.front();
+            AttackStart(target);
+            return;
+        }
+
         pVictim = SelectAttackTarget(pLeader);
         if (pVictim){
             AttackStart(pVictim);
@@ -874,18 +938,40 @@ void WorldBotAI::UpdateAI(uint32 const diff)
         // if no pVictim we just jump to traveling mode
     }
     else if (pVictim){
-        if (me->IsInCombat())
+        // if (pVictim->GetObjectGuid() != me->GetTargetGuid())
+        //     me->SetTargetGuid(pVictim->GetObjectGuid());
+        
+
+        if (!me->HasInArc(pVictim, 2 * M_PI_F / 3) && !me->IsMoving()){
+            me->SetInFront(pVictim);
+            me->SendMovementPacket(MSG_MOVE_SET_FACING, false);
+        }
+
+        if (me->IsNonMeleeSpellCasted(false, false, true))
+            return;
+
+        AttackStart(pVictim);
+        UpdateInCombatPets();
+
+        if (me->IsInCombat()){
             UpdateInCombatAI();
-        else
+            // UpdateInCombatPets();
+        }
+        else {
             UpdateOutOfCombatAI();
+            // UpdateOutOfCombatPets();
+        }
 
         return;
     }
 
     // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ Before tha main cycle ...");
     
+    UpdateOutOfCombatPets();
     
-    
+    if (me->IsNonMeleeSpellCasted(false, false, true))
+        return;
+
     UpdateOutOfCombatAI();
     
     if (me->IsInCombat() && pVictim)
@@ -992,7 +1078,7 @@ void WorldBotAI::UpdateAI(uint32 const diff)
             bool flag = false;
             Position pathPos {pathNode.x, pathNode.y, pathNode.z, 0.0f};
             float dist = me->GetDistance3dToCenter(pathPos);
-            if (dist > 150.0f){
+            if (dist > 200.0f){
                 ClearTravelData(true);
                 return;
             }
@@ -1211,6 +1297,22 @@ void WorldBotAI::UpdateInCombatAI()
         }
         else if (CrowdControlMarkedTargets())
             return;
+    }
+
+    if (me->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL))
+    {
+        // Stop auto shot if no target.
+        if (!me->GetVictim())
+            me->InterruptSpell(CURRENT_AUTOREPEAT_SPELL, true);
+        else if (me->GetClass() == CLASS_HUNTER)
+        {
+            if (me->GetCombatDistance(me->GetVictim()) < 8.0f)
+                me->InterruptSpell(CURRENT_AUTOREPEAT_SPELL, true);
+            else
+                UpdateInCombatAI_Hunter();
+        }
+
+        return;
     }
 
     if (CheckForDispelTargets())
@@ -2404,10 +2506,32 @@ void WorldBotAI::UpdateOutOfCombatAI_Warlock()
         }
     }
 
+    if (m_spells.warlock.pUnendingBreath){
+        if (Player* pTarget = SelectBuffTarget(m_spells.warlock.pUnendingBreath)){
+            if (CanTryToCastSpell(pTarget, m_spells.warlock.pUnendingBreath)){
+                if (DoCastSpell(pTarget, m_spells.warlock.pUnendingBreath) == SPELL_CAST_OK){
+                    m_isBuffing = true;
+                    me->ClearTarget();
+                    return;
+                }
+            }
+        }
+    }
+
     if (m_spells.warlock.pDemonArmor &&
         CanTryToCastSpell(me, m_spells.warlock.pDemonArmor))
     {
         if (DoCastSpell(me, m_spells.warlock.pDemonArmor) == SPELL_CAST_OK)
+        {
+            m_isBuffing = true;
+            me->ClearTarget();
+            return;
+        }
+    }
+    else if (!m_spells.warlock.pDemonArmor && m_spells.warlock.pDemonSkin &&
+        CanTryToCastSpell(me, m_spells.warlock.pDemonSkin))
+    {
+        if (DoCastSpell(me, m_spells.warlock.pDemonSkin) == SPELL_CAST_OK)
         {
             m_isBuffing = true;
             me->ClearTarget();
@@ -2435,13 +2559,19 @@ void WorldBotAI::UpdateOutOfCombatAI_Warlock()
 
         UpdateInCombatAI_Warlock();
     }
-    else
-        SummonPetIfNeeded();
+    else {
+        if (me->GetPetGuid() || me->GetCharmGuid())
+            return;
+        
+        SummonRandomPet();
+    }
+        // SummonPetIfNeeded();
 }
 
 void WorldBotAI::UpdateInCombatAI_Warlock()
 {
-    if (Unit* pVictim = me->GetVictim())
+    Unit* pVictim = me->GetVictim();
+    if (pVictim)
     {
         if (m_spells.warlock.pDeathCoil &&
            (pVictim->CanReachWithMeleeAutoAttack(me) || pVictim->IsNonMeleeSpellCasted()) &&
@@ -3051,7 +3181,7 @@ void WorldBotAI::UpdateInCombatAI_Rogue()
                     vSpells.push_back(m_spells.rogue.pKidneyShot);
                 if (m_spells.rogue.pExposeArmor)
                     vSpells.push_back(m_spells.rogue.pExposeArmor);
-                if (m_spells.rogue.pRupture)
+                if (m_spells.rogue.pRupture && !pVictim->IsImmuneToMechanic(MECHANIC_BLEED))
                     vSpells.push_back(m_spells.rogue.pRupture);
             }
 
@@ -3590,6 +3720,33 @@ void WorldBotAI::UpdateInCombatAI_Druid()
     }
 }
 
+void WorldBotAI::SummonRandomPet(){
+    uint32 my_class = me->GetClass();
+    if (my_class == CLASS_WARLOCK){
+        std::vector<const SpellEntry*> vSummons;
+        if (m_spells.warlock.pSummonImp)
+            vSummons.push_back(m_spells.warlock.pSummonImp);
+        
+        if (m_spells.warlock.pSummonVoidwalker)
+            vSummons.push_back(m_spells.warlock.pSummonVoidwalker);
+
+        if (m_spells.warlock.pSummonSuccubus)
+            vSummons.push_back(m_spells.warlock.pSummonSuccubus);
+
+        if (m_spells.warlock.pSummonFelHunter)
+            vSummons.push_back(m_spells.warlock.pSummonFelHunter);
+
+        const SpellEntry* summon = nullptr; 
+        if (!vSummons.empty())
+            summon = SelectRandomContainerElement(vSummons);
+        if (summon && CanTryToCastSpell(me, summon))
+            if (DoCastSpell(me, summon) == SPELL_CAST_OK)
+                return;
+    }
+    else if (my_class == CLASS_HUNTER)
+        SummonPetIfNeeded();
+}
+
 void WorldBotAI::Initialize() {
     // AddToPlayerGroup();
 
@@ -3641,7 +3798,8 @@ void WorldBotAI::Initialize() {
     PopulateSpellData();
     AddAllSpellReagents();
     me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING);
-    SummonPetIfNeeded();
+    // SummonPetIfNeeded();
+    SummonRandomPet();
     me->SetHealthPercent(100.0f);
     me->SetPowerPercent(me->GetPowerType(), 100.0f);
 
@@ -3659,6 +3817,7 @@ void WorldBotAI::Initialize() {
     }
     PopulateProfessionSpells();
 
+    m_debugTimer.Reset(180000);
     m_initialized = true;
     return;
 }
@@ -3916,4 +4075,373 @@ std::vector<const SpellEntry*> WorldBotAI::GetProfessionSpellsFilterByRegex(std:
 
     return result;
 
+}
+
+Position WorldBotAI::GetPolarPositionForObject(WorldObject* object, float distance, float angle){
+    Position pos;
+    if (!object)
+        return pos;
+    if (distance < 0.0f)
+        distance = -distance;
+
+    float x, y, z;
+    x = object->GetPositionX() + distance * std::cos(angle);
+    y = object->GetPositionY() + distance * std::sin(angle);
+    Map* map = object->GetMap();
+    if (!map)
+        return pos;
+
+    z = map->GetHeight(x, y, object->GetPositionZ());
+    pos = {x, y, z, 0.0f};
+
+    return pos;
+}
+
+void WorldBotAI::UpdateOutOfCombatPets(){
+    Pet* pet = me->GetPet();
+    if (!pet)
+        return;
+
+    if (pet->IsNonMeleeSpellCasted(false, false, true))
+        return;
+    
+    uint32 my_class = me->GetClass();
+    if (my_class == CLASS_WARLOCK){
+        uint32 type = pet->GetEntry();
+        // Imp
+        if (type == 416){
+            if (m_spells.warlock.pFireShield){
+                const SpellEntry* spell = m_spells.warlock.pFireShield;
+                Unit* pTarget = nullptr;
+                if (me->GetGroup()){
+                    GroupReference* pMember = me->GetGroupRef()->GetFirstMember();
+                    while (pMember){
+                        if (CanPetTryToCastSpell(pMember->getSource(), spell)){
+                            pTarget = pMember->getSource();
+                            break;
+                        }
+                        pMember = pMember->next();
+                    }
+                }
+                else if (CanPetTryToCastSpell(me, spell))
+                    pTarget = me;
+
+                if (pTarget){
+                    pet->CastSpell(pTarget, spell, false);
+                    return;
+                }
+            }
+
+            if (m_spells.warlock.pBloodPact && CanTryToCastSpell(me, m_spells.warlock.pBloodPact)){
+                pet->CastSpell(me, m_spells.warlock.pBloodPact, false);
+                return;
+            }
+
+            if (!pet->IsInCombat()){
+                if (m_spells.warlock.pPhaseShift && CanTryToCastSpell(pet, m_spells.warlock.pPhaseShift)){
+                    pet->CastSpell(pet, m_spells.warlock.pPhaseShift, false);
+                    return;
+                }
+            }
+        }
+        // Voidwalker
+        else if (type == 1860){
+            if (m_spells.warlock.pConsumeShadows && CanTryToCastSpell(pet, m_spells.warlock.pConsumeShadows) &&
+                pet->GetHealthPercent() <= 40.0f){
+                pet->CastSpell(pet, m_spells.warlock.pConsumeShadows, false);
+                return;
+            }
+        }
+        // Succubus
+        else if (type == 1863){
+            if (m_spells.warlock.pInvisibility && CanTryToCastSpell(pet, m_spells.warlock.pInvisibility)){
+                pet->CastSpell(pet, m_spells.warlock.pInvisibility, false);
+                return;
+            }
+        }
+        // Felhunter
+        else if (type == 417){
+            const SpellEntry* spell = m_spells.warlock.pDevourMagic;
+            Unit* pTarget = nullptr;
+            if (CanPetTryToCastSpell(me, spell) && IsValidDispelTarget(me, spell))
+                pTarget = me;
+            else if (me->GetGroup()){
+                GroupReference* pMember = me->GetGroupRef()->GetFirstMember();
+                while (pMember){
+                    if (CanPetTryToCastSpell(pMember->getSource(), spell) && IsValidDispelTarget(pMember->getSource(), spell)){
+                        pTarget = pMember->getSource();
+                        break;
+                    }
+                    pMember = pMember->next();
+                }
+            }
+            
+            if (pTarget){
+                pet->CastSpell(pTarget, spell, false);
+                return;
+            }
+        }
+    }
+}
+
+void WorldBotAI::UpdateInCombatPets(){
+    uint32 my_class = me->GetClass();
+    if (my_class == CLASS_WARLOCK){
+        Pet* pet = me->GetPet();
+        if (!pet)
+            return;
+        
+        Unit* my_victim = me->GetVictim();
+        Unit* pet_victim = pet->GetVictim();
+
+        if (!my_victim && !pet_victim)
+            return;
+        
+        if (!pet_victim){
+            pet->GetCharmInfo()->SetIsCommandAttack(true);
+            pet->AI()->AttackStart(my_victim);
+            return;
+        }
+
+        if (pet->IsNonMeleeSpellCasted(false, false, true))
+            return;
+
+        uint32 type = pet->GetEntry();
+        // Imp
+        if (type == 416){
+            if (m_spells.warlock.pFirebolt && CanPetTryToCastSpell(pet_victim, m_spells.warlock.pFirebolt)){
+                pet->CastSpell(my_victim, m_spells.warlock.pFirebolt, false);
+                return;
+            }
+        }
+        // Voidwalker
+        else if (type == 1860){
+            if (pet->HasUnitState(UNIT_STATE_ROOT) && pet_victim && !pet_victim->IsWithinDist(pet, 5.0f)){
+                std::vector<Unit*> enemies;
+                HostileReference* ref = pet->GetHostileRefManager().getFirst();
+                while (ref){
+                    Unit* pEnemy = ref->getSourceUnit();
+                    if (pEnemy->IsWithinDist(pet, 5.0f)){
+                        pet->AI()->AttackStart(pEnemy);
+                        pet->GetCharmInfo()->SetIsCommandAttack(true);
+                        return;
+                    }
+                    ref = ref->next();
+                }
+            }
+            else {
+                HostileReference* ref, * refStart = pet->GetHostileRefManager().getFirst();
+                ref = refStart;
+                float min = 100000000.0f;
+                Unit* lowThreatUnit = nullptr;
+                while (ref){
+                    if (ref->getThreat() < min){
+                        min = ref->getThreat();
+                        lowThreatUnit = ref->getSourceUnit();
+                    }
+                    ref = ref->next();
+                }
+                if (!lowThreatUnit)
+                    return;
+                
+                pet->GetCharmInfo()->SetIsCommandAttack(true);
+                pet->AI()->AttackStart(lowThreatUnit);
+            }
+
+            if (pet->GetHealthPercent() <= 8.0f || me->GetHealthPercent() <= 30.0f){
+                if (m_spells.warlock.pSacrifice && CanPetTryToCastSpell(me, m_spells.warlock.pSacrifice)){
+                    pet->CastSpell(me, m_spells.warlock.pSacrifice, false);
+                    return;
+                }
+            }
+
+            if (m_spells.warlock.pTorment && CanPetTryToCastSpell(pet_victim, m_spells.warlock.pTorment)){
+                pet->CastSpell(pet_victim, m_spells.warlock.pTorment, false);
+                return;
+            }
+
+            if (m_spells.warlock.pSuffering && CanPetTryToCastSpell(pet, m_spells.warlock.pSuffering)){
+                uint32 attackersCount = 0;
+                for (const auto& attacker: me->GetAttackers()){
+                    if (attacker->IsWithinDist(me, 8.0f))
+                        attackersCount++;
+                }
+                if (attackersCount >= 3){
+                    if (pet->GetDistance2dToCenter(me->GetPosition()) > 5.0f){
+                        if (pet->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE){
+                            pet->GetMotionMaster()->MoveFollow(me, 1.0f, me->GetOrientation());
+                        }
+                        return;
+                    }
+                    else {
+                        pet->CastSpell(pet, m_spells.warlock.pSuffering, false);
+                        return;
+                    }
+                }
+            }
+        }
+        // Succubus
+        else if (type == 1863){
+            if (pet->HasUnitState(UNIT_STATE_ROOT) && pet->GetVictim() && !pet->GetVictim()->IsWithinDist(me, 5.0f)){
+                std::vector<Unit*> enemies;
+                HostileReference* ref = me->GetHostileRefManager().getFirst();
+                while (ref){
+                    Unit* pEnemy = ref->getSourceUnit();
+                    if (pEnemy->IsWithinDist(pet, 5.0f)){
+                        pet->AI()->AttackStart(pEnemy);
+                        pet->GetCharmInfo()->SetIsCommandAttack(true);
+                        return;
+                    }
+                    ref = ref->next();
+                }
+            }
+
+            if (m_spells.warlock.pLashofPain && CanPetTryToCastSpell(pet_victim, m_spells.warlock.pLashofPain)){
+                pet->CastSpell(pet_victim, m_spells.warlock.pLashofPain, false);
+                return;
+            }
+
+            if (me->GetGroup() && pet_victim->GetVictim() == pet){
+                if (m_spells.warlock.pSoothingKiss && CanPetTryToCastSpell(pet_victim, m_spells.warlock.pSoothingKiss)){
+                    pet->CastSpell(pet_victim, m_spells.warlock.pSoothingKiss, false);
+                    return;
+                }
+            }
+
+            if (m_spells.warlock.pSeduction){
+                if (pet_victim->IsNonMeleeSpellCasted(false, false, true) && CanPetTryToCastSpell(pet_victim, m_spells.warlock.pSeduction)){
+                    pet->CastSpell(pet_victim, m_spells.warlock.pSeduction, false);
+                    return;
+                }
+
+                if (Unit* pTarget = SelectAttackerDifferentFrom(pet_victim)){
+                    if (CanUseCrowdControl(m_spells.warlock.pSeduction, pTarget) && CanPetTryToCastSpell(pTarget, m_spells.warlock.pSeduction)){
+                        pet->CastSpell(pTarget, m_spells.warlock.pSeduction, false);
+                        return;
+                    }
+                }
+            }
+        }
+        // Felhunter
+        else if (type == 417){
+            if (pet->HasUnitState(UNIT_STATE_ROOT) && pet->GetVictim() && !pet->GetVictim()->IsWithinDist(me, 5.0f)){
+                std::vector<Unit*> enemies;
+                HostileReference* ref = me->GetHostileRefManager().getFirst();
+                while (ref){
+                    Unit* pEnemy = ref->getSourceUnit();
+                    if (pEnemy->IsWithinDist(pet, 5.0f)){
+                        pet->AI()->AttackStart(pEnemy);
+                        pet->GetCharmInfo()->SetIsCommandAttack(true);
+                        return;
+                    }
+                    ref = ref->next();
+                }
+            }
+
+            if (m_spells.warlock.pSpellLock){
+                const SpellEntry* spell = m_spells.warlock.pSpellLock;
+                HostileReference* ref = pet->GetHostileRefManager().getFirst();
+                while (ref){
+                    Unit* pTarget = ref->getSourceUnit();
+                    if (pTarget->IsNonMeleeSpellCasted(false, false, true) && CanPetTryToCastSpell(pTarget, spell)){
+                        pet->CastSpell(pTarget, spell, false);
+                        return;
+                    }
+                    ref = ref->next();
+                }
+            }
+            
+            if (m_spells.warlock.pDevourMagic){
+                const SpellEntry* spell = m_spells.warlock.pDevourMagic;
+                Unit* pTarget = nullptr;
+                if (CanPetTryToCastSpell(me, spell) && IsValidDispelTarget(me, spell)){
+                    pTarget = me;
+                }
+                else if (me->GetGroup()){
+                    GroupReference* pMember = me->GetGroup()->GetFirstMember();
+                    while (pMember){
+                        if (CanPetTryToCastSpell(pMember->getSource(), spell) && IsValidDispelTarget(pMember->getSource(), spell)){
+                            pTarget = pMember->getSource();
+                            break;
+                        }
+                        pMember = pMember->next();
+                    }
+                }
+                else if (CanPetTryToCastSpell(pet, spell) && IsValidDispelTarget(pet, spell)){
+                    pTarget = pet;
+                }
+                else if (CanPetTryToCastSpell(pet_victim, spell) && IsValidDispelTarget(pet_victim, spell)){
+                    pTarget = pet_victim;\
+                }
+                
+                if (pTarget){
+                    pet->CastSpell(pTarget, spell, false);
+                    return;
+                }
+            }
+
+            if (m_spells.warlock.pTaintedBlood){
+                const SpellEntry* spell = m_spells.warlock.pTaintedBlood;
+                if (CanPetTryToCastSpell(pet, spell)){
+                    pet->CastSpell(pet, spell, false);
+                    return;
+                }
+            }
+        }
+    }
+}
+
+bool WorldBotAI::CanPetTryToCastSpell(Unit* pTarget, const SpellEntry* pSpellEntry){
+    Pet* pet = me->GetPet();
+    if (!pet)
+        return false;
+
+    if (!pet->IsSpellReady(pSpellEntry))
+        return false;
+
+    if (pet->HasGCD(pSpellEntry))
+        return false;
+
+    if (pSpellEntry->TargetAuraState &&
+       !pTarget->HasAuraState(AuraState(pSpellEntry->TargetAuraState)))
+        return false;
+
+    if (pSpellEntry->CasterAuraState &&
+        !pet->HasAuraState(AuraState(pSpellEntry->CasterAuraState)))
+        return false;
+
+    uint32 const powerCost = Spell::CalculatePowerCost(pSpellEntry, pet);
+    Powers const powerType = Powers(pSpellEntry->powerType);
+
+    if (powerType == POWER_HEALTH)
+    {
+        if (pet->GetHealth() <= powerCost)
+            return false;
+        return true;
+    }
+
+    if (pet->GetPower(powerType) < powerCost)
+        return false;
+
+    if (pTarget->IsImmuneToSpell(pSpellEntry, false))
+        return false;
+
+    if (pSpellEntry->GetErrorAtShapeshiftedCast(pet->GetShapeshiftForm()) != SPELL_CAST_OK)
+        return false;
+
+    if (pSpellEntry->IsSpellAppliesAura() && pTarget->HasAura(pSpellEntry->Id))
+        return false;
+
+    SpellRangeEntry const* srange = sSpellRangeStore.LookupEntry(pSpellEntry->rangeIndex);
+    if (pet != pTarget && pSpellEntry->EffectImplicitTargetA[0] != TARGET_UNIT_CASTER)
+    {
+        float const dist = pet->GetCombatDistance(pTarget);
+
+        if (dist > srange->maxRange)
+            return false;
+        if (srange->minRange && dist < srange->minRange)
+            return false;
+    }
+
+    return true;
 }

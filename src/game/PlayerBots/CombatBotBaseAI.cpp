@@ -127,6 +127,8 @@ void CombatBotBaseAI::ResetSpellData()
     for (auto& ptr : m_spells.raw.spells)
         ptr = nullptr;
 
+    std::memset(&m_spells, 0, sizeof(m_spells));
+
     m_resurrectionSpell = nullptr;
     m_spellListDirectHeal.clear();
     m_spellListPeriodicHeal.clear();
@@ -947,6 +949,9 @@ void CombatBotBaseAI::PopulateSpellData()
                 {
                     if (IsHigherRankSpell(m_spells.warlock.pDetectInvisibility))
                         m_spells.warlock.pDetectInvisibility = pSpellEntry;
+                }
+                else if (pSpellEntry->SpellName[0].find("Unending Breath") != std::string::npos){
+                    m_spells.warlock.pUnendingBreath = pSpellEntry;
                 }
                 else if (pSpellEntry->SpellName[0].find("Shadow Ward") != std::string::npos)
                 {

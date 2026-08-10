@@ -139,7 +139,7 @@ ChatCommand * ChatHandler::getCommandTable()
         { "enchant",        SEC_PLAYER,     false,  &ChatHandler::HandleWorldBotTradeEnchantCommand,   "", nullptr },
         { "findpath",       SEC_PLAYER,     false,  &ChatHandler::HandleWorldBotFindPathCommand, "", nullptr},
         { "remove",         SEC_PLAYER,     false,  &ChatHandler::HandleWorldBotRemoveCommand,   "", nullptr },
-        { "spawnlvlrange",  SEC_PLAYER,     false,  &ChatHandler::HandleWorldBotSpawnCommand, "", nullptr },
+        { "spawnlvlrange",  SEC_PLAYER,     true,  &ChatHandler::HandleWorldBotSpawnCommand, "", nullptr },
         { nullptr,        0,                    false, nullptr,                                          "", nullptr },
     };
 
