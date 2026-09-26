@@ -360,13 +360,21 @@ public:
             const SpellEntry* pPetWeb;
             const SpellEntry* pAutoShoot;
             SpellEntry const* pAspectOfTheCheetah;
+            const SpellEntry* pAspectOfThePack;
             SpellEntry const* pAspectOfTheMonkey;
             SpellEntry const* pAspectOfTheHawk;
+            const SpellEntry* pTrackHidden;
+            const SpellEntry* pMendPet;
+            const SpellEntry* pIntimidation;
+            const SpellEntry* pBestialWrath;
             SpellEntry const* pSerpentSting;
             SpellEntry const* pArcaneShot;
             SpellEntry const* pAimedShot;
             SpellEntry const* pMultiShot;
             SpellEntry const* pConcussiveShot;
+            const SpellEntry* pScatterShot;
+            const SpellEntry* pTrueshotAura;
+            const SpellEntry* pViperSting;
             SpellEntry const* pWingClip;
             SpellEntry const* pHuntersMark;
             SpellEntry const* pMongooseBite;
@@ -375,6 +383,13 @@ public:
             SpellEntry const* pFeignDeath;
             SpellEntry const* pScareBeast;
             SpellEntry const* pVolley;
+            const SpellEntry* pDeterrence;
+            const SpellEntry* pCounterattack;
+            const SpellEntry* pWyvernSting;
+            const SpellEntry* pImmolationTrap;
+            const SpellEntry* pExplosiveTrap;
+            const SpellEntry* pFreezingTrap;
+            const SpellEntry* pFrostTrap;
         } hunter;
         struct
         {

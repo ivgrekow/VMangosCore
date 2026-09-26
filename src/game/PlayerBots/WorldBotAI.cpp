@@ -25,6 +25,26 @@ enum WorldBotSpells
     WB_SPELL_HONORLESS_TARGET = 2479,
 };
 
+enum HunterPets {
+    // PET_WOLF    = 565,
+    PET_CAT     = 681,
+    // PET_BEAR    = 822,
+    // PET_CRAB    = 831,
+    // PET_GORILLA = 1108,
+    // PET_BIRD    = 1109,
+    PET_BOAR    = 1190,
+    // PET_BAT     = 1554,
+    // PET_CROC    = 1693,
+    PET_SPIDER  = 1781,
+    // PET_OWL     = 1997,
+    // PET_STRIDER = 2322,
+    // PET_SCORPID = 3127,
+    // PET_SERPENT = 3247,
+    PET_RAPTOR  = 3254,
+    // PET_TURTLE  = 3461,
+    // PET_HYENA   = 4127,
+};
+
 #define WB_UPDATE_INTERVAL 400
 #define WB_MIN_FOLLOW_DIST 3.0f
 #define WB_MAX_FOLLOW_DIST 6.0f
@@ -656,6 +676,26 @@ void WorldBotAI::OnPlayerLogin()
 
 void WorldBotAI::UpdateAI(uint32 const diff)
 {
+    // debugging stuck bots
+    uint32 debug_time = 360000;
+    if (!me->GetGroup()){
+        if (m_primaryTarget){
+            m_debugTimer.Update(diff);
+            if (m_debugTimer.Passed()){
+                uint32 node_id = SelectRandomContainerElement(m_safeTravelPoints);
+                const TravelNode& node = sPlayerBotMgr.GetTravelNode(node_id);
+                ClearTravelData(true);
+                me->AttackStop();
+                me->StopMoving();
+                me->TeleportTo(node.map_id, node.x, node.y, node.z, frand(0.0f, 6.28f));
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::UpdateAI : bot \"%s\" was inactive 3 minutes; teleported to node #%d \"%s\".", me->GetName(), node.id, node.name.c_str());
+                m_debugTimer.Reset(debug_time);
+            }
+        }
+        else
+            m_debugTimer.Reset(debug_time);
+    }
+    
     m_updateTimer.Update(diff);
     if (!m_updateTimer.Passed())
         return;
@@ -676,23 +716,7 @@ void WorldBotAI::UpdateAI(uint32 const diff)
         m_resetSpellData = false;
     }
 
-    // debugging stuck bots
-    if (!me->GetGroup()){
-        m_debugTimer.Update(diff);
-        if (m_debugTimer.Passed()){
-            uint32 node_id = SelectRandomContainerElement(m_safeTravelPoints);
-            const TravelNode& node = sPlayerBotMgr.GetTravelNode(node_id);
-            ClearTravelData(true);
-            me->AttackStop();
-            me->StopMoving();
-            me->TeleportTo(node.map_id, node.x, node.y, node.z, frand(0.0f, 6.28f));
-            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::UpdateAI : bot \"%s\" was inactive 3 minutes; teleported to node #%d \"%s\".", me->GetName(), node.id, node.name.c_str());
-            m_debugTimer.Reset(180000);
-        }
-    }
-    // debugging stuck bots
-    if (!me->GetGroup() && me->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE)
-        m_debugTimer.Reset(180000);
+    
     
 
     if (me->GetDeathState() == CORPSE)
@@ -774,6 +798,7 @@ void WorldBotAI::UpdateAI(uint32 const diff)
         return;
     }
 
+    
     if (me->HasUnitState(UNIT_STATE_FEIGN_DEATH) && me->HasAuraType(SPELL_AURA_FEIGN_DEATH) &&
        !me->IsInCombat() && (!me->GetPet() || !me->GetPet()->IsInCombat()) &&
        !me->SelectRandomUnfriendlyTarget(nullptr, 20.0f, false, true))
@@ -868,11 +893,12 @@ void WorldBotAI::UpdateAI(uint32 const diff)
             me->SendMovementPacket(MSG_MOVE_SET_FACING, false);
         }
         
+        UpdateInCombatPets();
+        
         if (me->IsNonMeleeSpellCasted(false, false, true))
             return;
 
         AttackStart(m_primaryTarget);
-        UpdateInCombatPets();
 
         if (me->IsInCombat()){
             UpdateInCombatAI();
@@ -946,12 +972,13 @@ void WorldBotAI::UpdateAI(uint32 const diff)
             me->SetInFront(pVictim);
             me->SendMovementPacket(MSG_MOVE_SET_FACING, false);
         }
+        
+        UpdateInCombatPets();
 
         if (me->IsNonMeleeSpellCasted(false, false, true))
             return;
 
         AttackStart(pVictim);
-        UpdateInCombatPets();
 
         if (me->IsInCombat()){
             UpdateInCombatAI();
@@ -1835,6 +1862,11 @@ void WorldBotAI::UpdateOutOfCombatAI_Hunter()
             return;
     }
 
+    if (m_spells.hunter.pTrackHidden && !me->HasAura(m_spells.hunter.pTrackHidden->Id)){
+        if (DoCastSpell(me, m_spells.hunter.pTrackHidden) == SPELL_CAST_OK)
+            return;
+    }
+
     if (Unit* pVictim = me->GetVictim())
     {
         if (m_spells.hunter.pHuntersMark &&
@@ -1842,6 +1874,17 @@ void WorldBotAI::UpdateOutOfCombatAI_Hunter()
         {
             if (DoCastSpell(pVictim, m_spells.hunter.pHuntersMark) == SPELL_CAST_OK)
                 return;
+        }
+
+        if (pVictim->IsCreature()){
+            if (m_spells.hunter.pExplosiveTrap && CanTryToCastSpell(me, m_spells.hunter.pExplosiveTrap)){
+                if (DoCastSpell(me, m_spells.hunter.pExplosiveTrap) == SPELL_CAST_OK)
+                    return;
+            }
+            else if (m_spells.hunter.pImmolationTrap && CanTryToCastSpell(me, m_spells.hunter.pImmolationTrap)){
+                if (DoCastSpell(me, m_spells.hunter.pImmolationTrap) == SPELL_CAST_OK)
+                    return;
+            }
         }
 
         if (Pet* pPet = me->GetPet())
@@ -1856,7 +1899,8 @@ void WorldBotAI::UpdateOutOfCombatAI_Hunter()
         UpdateInCombatAI_Hunter();
     }
     else
-        SummonPetIfNeeded();
+        // SummonPetIfNeeded();
+        SummonRandomPet();
 }
 
 void WorldBotAI::UpdateInCombatAI_Hunter()
@@ -1901,6 +1945,24 @@ void WorldBotAI::UpdateInCombatAI_Hunter()
                 return;
         }
 
+        if (m_spells.hunter.pIntimidation && CanTryToCastSpell(pVictim, m_spells.hunter.pIntimidation)){
+            if (pVictim->IsCreature() && pVictim->GetVictim() == me){
+                if (DoCastSpell(pVictim, m_spells.hunter.pIntimidation) == SPELL_CAST_OK)
+                    return;
+            }
+
+            if (pVictim->IsPlayer()){
+                if (IsMeleeDamageClass(pVictim->GetClass())){
+                    if (pVictim->CanReachWithMeleeAutoAttack(me))
+                        if (DoCastSpell(pVictim, m_spells.hunter.pIntimidation) == SPELL_CAST_OK)
+                            return;
+                }
+                else if (pVictim->IsNonMeleeSpellCasted(false, false, true))
+                    if (DoCastSpell(pVictim, m_spells.hunter.pIntimidation) == SPELL_CAST_OK)
+                        return;
+            }
+        }
+
         if (m_spells.hunter.pAimedShot &&
             CanTryToCastSpell(pVictim, m_spells.hunter.pAimedShot))
         {
@@ -1915,7 +1977,7 @@ void WorldBotAI::UpdateInCombatAI_Hunter()
                 return;
         }
 
-        if (m_spells.hunter.pSerpentSting &&
+        if (m_spells.hunter.pSerpentSting && !m_spells.hunter.pScatterShot && !m_spells.hunter.pWyvernSting &&
             CanTryToCastSpell(pVictim, m_spells.hunter.pSerpentSting))
         {
             if (DoCastSpell(pVictim, m_spells.hunter.pSerpentSting) == SPELL_CAST_OK)
@@ -1926,6 +1988,13 @@ void WorldBotAI::UpdateInCombatAI_Hunter()
             CanTryToCastSpell(pVictim, m_spells.hunter.pMultiShot))
         {
             if (DoCastSpell(pVictim, m_spells.hunter.pMultiShot) == SPELL_CAST_OK)
+                return;
+        }
+
+        if (m_spells.hunter.pHuntersMark &&
+            CanTryToCastSpell(pVictim, m_spells.hunter.pHuntersMark))
+        {
+            if (DoCastSpell(pVictim, m_spells.hunter.pHuntersMark) == SPELL_CAST_OK)
                 return;
         }
 
@@ -1965,22 +2034,45 @@ void WorldBotAI::UpdateInCombatAI_Hunter()
 
         if (pVictim->CanReachWithMeleeAutoAttack(me))
         {
-            if (m_spells.hunter.pWingClip &&
-                CanTryToCastSpell(pVictim, m_spells.hunter.pWingClip))
-            {
-                DoCastSpell(pVictim, m_spells.hunter.pWingClip);
+            if (m_spells.hunter.pWyvernSting && !pVictim->HasBreakableByDamageCrowdControlAura() && CanTryToCastSpell(pVictim, m_spells.hunter.pWyvernSting)){
+                if (DoCastSpell(pVictim, m_spells.hunter.pWyvernSting) == SPELL_CAST_OK)
+                    return;
             }
 
-            if (m_spells.hunter.pMongooseBite &&
-                CanTryToCastSpell(pVictim, m_spells.hunter.pMongooseBite))
-            {
-                DoCastSpell(pVictim, m_spells.hunter.pMongooseBite);
+            if (m_spells.hunter.pScatterShot && !pVictim->HasBreakableByDamageCrowdControlAura() && CanTryToCastSpell(pVictim, m_spells.hunter.pScatterShot)){
+                if (DoCastSpell(pVictim, m_spells.hunter.pScatterShot) == SPELL_CAST_OK)
+                    return;
             }
 
-            if (m_spells.hunter.pRaptorStrike &&
-                CanTryToCastSpell(pVictim, m_spells.hunter.pRaptorStrike))
-            {
-                DoCastSpell(pVictim, m_spells.hunter.pRaptorStrike);
+            if (m_spells.hunter.pFreezingTrap && m_spells.hunter.pFeignDeath){
+                if (CanTryToCastSpell(pVictim, m_spells.hunter.pFeignDeath))
+                    if (DoCastSpell(pVictim, m_spells.hunter.pFeignDeath) == SPELL_CAST_OK)
+                        return;
+
+                if (!pVictim->HasBreakableByDamageCrowdControlAura() && CanTryToCastSpell(pVictim, m_spells.hunter.pFreezingTrap)){
+                    if (DoCastSpell(pVictim, m_spells.hunter.pFreezingTrap) == SPELL_CAST_OK)
+                        return;
+                }
+            }
+
+            if (!pVictim->HasBreakableByDamageCrowdControlAura()){
+                if (m_spells.hunter.pWingClip &&
+                    CanTryToCastSpell(pVictim, m_spells.hunter.pWingClip))
+                {
+                    DoCastSpell(pVictim, m_spells.hunter.pWingClip);
+                }
+    
+                if (m_spells.hunter.pMongooseBite &&
+                    CanTryToCastSpell(pVictim, m_spells.hunter.pMongooseBite))
+                {
+                    DoCastSpell(pVictim, m_spells.hunter.pMongooseBite);
+                }
+    
+                if (m_spells.hunter.pRaptorStrike &&
+                    CanTryToCastSpell(pVictim, m_spells.hunter.pRaptorStrike))
+                {
+                    DoCastSpell(pVictim, m_spells.hunter.pRaptorStrike);
+                }
             }
         }
         else
@@ -1993,16 +2085,18 @@ void WorldBotAI::UpdateInCombatAI_Hunter()
             }
         }
 
-        if (!me->HasUnitState(UNIT_STATE_ROOT) &&
-            (me->GetCombatDistance(pVictim) < 8.0f) &&
-            (GetRole() != ROLE_MELEE_DPS) &&
-             me->GetMotionMaster()->GetCurrentMovementGeneratorType() != DISTANCING_MOTION_TYPE)
-        {
-            if (!me->IsStopped())
-                me->StopMoving();
-            me->GetMotionMaster()->Clear();
-            if (RunAwayFromTarget(pVictim))
-                return;
+        if (pVictim->IsPlayer() || (pVictim->IsCreature() && pVictim->GetVictim() != me)){
+            if (!me->HasUnitState(UNIT_STATE_ROOT) &&
+                (me->GetCombatDistance(pVictim) < 8.0f) &&
+                (GetRole() != ROLE_MELEE_DPS) &&
+                 me->GetMotionMaster()->GetCurrentMovementGeneratorType() != DISTANCING_MOTION_TYPE)
+            {
+                if (!me->IsStopped())
+                    me->StopMoving();
+                me->GetMotionMaster()->Clear();
+                if (RunAwayFromTarget(pVictim))
+                    return;
+            }
         }
     }
 }
@@ -3743,8 +3837,41 @@ void WorldBotAI::SummonRandomPet(){
             if (DoCastSpell(me, summon) == SPELL_CAST_OK)
                 return;
     }
-    else if (my_class == CLASS_HUNTER)
-        SummonPetIfNeeded();
+    else if (my_class == CLASS_HUNTER){
+        if (me->GetCharmGuid())
+            return;
+
+        if (me->GetLevel() < 10)
+            return;
+
+        uint32 spellRevivePet = 982;
+        uint32 spellCallPet = 883;
+        uint32 spellTameBeast = 13481;
+        if (me->GetPetGuid() || sCharacterDatabaseCache.GetCharacterPetByOwner(me->GetGUIDLow()))
+        {
+            if (Pet* pPet = me->GetPet())
+            {
+                if (!pPet->IsAlive())
+                    me->CastSpell(pPet, spellRevivePet, true);
+            }
+            else
+                me->CastSpell(me, spellCallPet, true);
+
+            return;
+        }
+
+        uint32 petId = PickRandomValue(PET_CAT, PET_BOAR, PET_SPIDER, PET_RAPTOR);
+        if (Creature* pCreature = me->SummonCreature(petId,
+            me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 0.0f,
+            TEMPSUMMON_TIMED_COMBAT_OR_DEAD_DESPAWN, 3000, false, 3000))
+        {
+            pCreature->SetLevel(me->GetLevel());
+            me->CastSpell(pCreature, spellTameBeast, true);
+        }
+        if (Pet* pet = me->GetPet()){
+
+        }
+    }
 }
 
 void WorldBotAI::Initialize() {
@@ -4182,18 +4309,27 @@ void WorldBotAI::UpdateOutOfCombatPets(){
             }
         }
     }
+    else if (my_class == CLASS_HUNTER){
+        uint32 creatureEntry = pet->GetEntry();
+        if (creatureEntry == PET_CAT){
+            const SpellEntry* spell = m_spells.hunter.pPetProwl;
+            if (spell && CanPetTryToCastSpell(pet, spell)){
+                pet->CastSpell(pet, spell, false);
+                return;
+            }
+        }
+    }
 }
 
 void WorldBotAI::UpdateInCombatPets(){
     uint32 my_class = me->GetClass();
+    Pet* pet = me->GetPet();
+    if (!pet)
+        return;
+
     if (my_class == CLASS_WARLOCK){
-        Pet* pet = me->GetPet();
-        if (!pet)
-            return;
-        
         Unit* my_victim = me->GetVictim();
         Unit* pet_victim = pet->GetVictim();
-
         if (!my_victim && !pet_victim)
             return;
         
@@ -4386,6 +4522,76 @@ void WorldBotAI::UpdateInCombatPets(){
                     pet->CastSpell(pet, spell, false);
                     return;
                 }
+            }
+        }
+    }
+    else if (my_class == CLASS_HUNTER){
+        Unit* pet_victim = pet->GetVictim();
+        Unit* my_victim = me->GetVictim();
+        if (!my_victim && !pet_victim)
+            return;
+
+        if (!pet_victim){
+            pet->AI()->AttackStart(my_victim);
+            pet->GetCharmInfo()->SetIsCommandAttack(true);
+            return;
+        }
+        
+        if (m_spells.hunter.pPetGrowl && CanPetTryToCastSpell(pet_victim, m_spells.hunter.pPetGrowl)){
+            pet->CastSpell(pet_victim, m_spells.hunter.pPetGrowl, false);
+            return;
+        }
+
+        uint32 creatureEntry = pet->GetEntry();
+        if (creatureEntry == PET_CAT){
+            if (m_spells.hunter.pPetClaw && CanPetTryToCastSpell(pet_victim, m_spells.hunter.pPetClaw)){
+                pet->CastSpell(pet_victim, m_spells.hunter.pPetClaw, false);
+                return;
+            }
+        }
+        else if (creatureEntry == PET_RAPTOR){
+            if (m_spells.hunter.pPetBite && CanPetTryToCastSpell(pet_victim, m_spells.hunter.pPetBite)){
+                pet->CastSpell(pet_victim, m_spells.hunter.pPetBite, false);
+                return;
+            }
+            
+            if (m_spells.hunter.pPetDash && CanPetTryToCastSpell(pet, m_spells.hunter.pPetDash)){
+                pet->CastSpell(pet, m_spells.hunter.pPetDash, false);
+                return;
+            }
+        }
+        else if (creatureEntry == PET_BOAR){
+            if (m_spells.hunter.pPetCharge && pet_victim->IsNonMeleeSpellCasted(false, false, true) &&
+                CanPetTryToCastSpell(pet_victim, m_spells.hunter.pPetCharge)){
+                    pet->CastSpell(pet_victim, m_spells.hunter.pPetCharge, false);
+                    return;
+                }
+
+            if (m_spells.hunter.pPetBite && CanPetTryToCastSpell(pet_victim, m_spells.hunter.pPetBite)){
+                pet->CastSpell(pet_victim, m_spells.hunter.pPetBite, false);
+                return;
+            }
+        }
+        else if (creatureEntry == PET_SPIDER){
+            if (m_spells.hunter.pPetWeb){
+                if (pet_victim->IsPlayer() && IsMeleeDamageClass(pet_victim->GetClass()) && pet_victim->IsMoving() &&
+                    CanPetTryToCastSpell(pet_victim, m_spells.hunter.pPetWeb)){
+                    pet->CastSpell(pet_victim, m_spells.hunter.pPetWeb, false);
+                    return;
+                }
+
+                if (m_spells.hunter.pPetBite && CanPetTryToCastSpell(pet_victim, m_spells.hunter.pPetBite)){
+                    pet->CastSpell(pet_victim, m_spells.hunter.pPetBite, false);
+                    return;
+                }
+            }
+        }
+
+        if (m_spells.hunter.pPetCower){
+            if (me->GetGroup() && pet->GetMapId() != 0 && pet->GetMapId() != 1 && pet == pet_victim->GetVictim() &&
+                CanPetTryToCastSpell(pet, m_spells.hunter.pPetCower)){
+                pet->CastSpell(pet, m_spells.hunter.pPetCower, false);
+                return;
             }
         }
     }

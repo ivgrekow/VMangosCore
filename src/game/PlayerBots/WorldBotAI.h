@@ -18,6 +18,7 @@
 #include "Utilities/Random.h"
 #include "TradeData.h"
 #include "Geometry.h"
+#include "CharacterDatabaseCache.h"
 
 #include <random>
 

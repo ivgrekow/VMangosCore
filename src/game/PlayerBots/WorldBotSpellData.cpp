@@ -1411,12 +1411,12 @@ void WorldBotAI::PopulateSpellData() {
 
                 if (my_level >= spell->spellLevel){
                     // me->LearnSpell(id, false);
-                    m_spells.hunter.pPetCower = spell;
+                    m_spells.hunter.pPetClaw = spell;
                 }
             }
 
             // Prowl (cats)
-            spellCandidates = {24451, 24454, 24455};
+            spellCandidates = {24450, 24454, 24455};
             for (auto id: spellCandidates){
                 const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
                 if (!spell)
@@ -1454,7 +1454,359 @@ void WorldBotAI::PopulateSpellData() {
                 }
             }
 
+            // Aspect of the Monkey
+            {
+                uint32 id = 13163;
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (spell && my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pAspectOfTheMonkey = spell;
+                }
+            }
 
+            // Aspect of the Hawk
+            spellCandidates = {13165, 14318, 14319, 14320, 14321, 14322, 25296};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    // me->LearnSpell(id, false);
+                    m_spells.hunter.pAspectOfTheHawk = spell;
+                }
+            }
+
+            // Aspect of the Cheetah
+            {
+                uint32 id = 5118;
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (spell && my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pAspectOfTheCheetah = spell;
+                }
+            }
+
+            // Aspect of the Pack
+            {
+                uint32 id = 13159;
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (spell && my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pAspectOfThePack = spell;
+                }
+            }
+
+            // Mend pet
+            spellCandidates = {136, 3111, 3661, 3662, 13542, 13543, 13544};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pMendPet = spell;
+                }
+            }
+
+            // Intimidation
+            if (me->HasSpell(19577)){
+                m_spells.hunter.pIntimidation = sSpellMgr.GetSpellEntry(19577);
+            }
+
+            // Bestial Wrath
+            if (me->HasSpell(19574)){
+                m_spells.hunter.pBestialWrath = sSpellMgr.GetSpellEntry(19574);
+            }
+
+            // Serpent Sting
+            spellCandidates = {1978, 13549, 13550, 13551, 13552, 13553, 13554, 13555, 25295};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pSerpentSting = spell;
+                }
+            }
+
+            // Arcane Shot
+            spellCandidates = {3044, 14281, 14282, 14283, 14284, 14285, 14286, 14287};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pArcaneShot = spell;
+                }
+            }
+
+            // Aimed Shot
+            spellCandidates = {19434, 20900, 20901, 20902, 20903, 20904};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pAimedShot = spell;
+                }
+            }
+
+            // Multi-shot
+            spellCandidates = {2643, 14288, 14289, 14290, 25294};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pMultiShot = spell;
+                }
+            }
+
+            // Concussive Shot
+            {
+                uint32 id = 5116;
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (spell && my_level >= spell->spellLevel){
+                    me->LearnSpell(spell->Id, false);
+                    m_spells.hunter.pConcussiveShot = spell;
+                }
+            }
+
+            // Viper Sting
+            spellCandidates = {3034, 14279, 14280};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pViperSting = spell;
+                }
+            }
+
+            // Track Hidden
+            {
+                uint32 id = 19885;
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (spell && my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pTrackHidden = spell;
+                }
+            }
+
+            // Scatter Shot
+            if (me->HasSpell(19503)){
+                m_spells.hunter.pScatterShot = sSpellMgr.GetSpellEntry(19503);
+            }
+
+            // Trueshot Aura
+            spellCandidates = {19506, 20905, 20906};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pTrueshotAura = spell;
+                }
+            }
+
+            // Wing Clip
+            spellCandidates = {2974, 14267, 14268};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pWingClip = spell;
+                }
+            }
+
+            // Hunter's Mark
+            spellCandidates = {1130, 14323, 14324, 14325};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pHuntersMark = spell;
+                }
+            }
+            
+            // Mongoose Bite
+            spellCandidates = {1495, 14269, 14270, 14271};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pMongooseBite = spell;
+                }
+            }
+
+            // Raptor Strike
+            spellCandidates = {14260, 14261, 14262, 14263, 14264, 14265, 14266};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pRaptorStrike = spell;
+                }
+            }
+
+            // Disengage
+            spellCandidates = {781, 14272, 14273};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pDisengage = spell;
+                }
+            }
+
+            // Feign Death
+            {
+                uint32 id = 5384;
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (spell && my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pFeignDeath = spell;
+                }
+            }
+
+            // Scare Beast
+            spellCandidates = {1513, 14326, 14327};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pScareBeast = spell;
+                }
+            }
+
+            // Volley
+            spellCandidates = {1510, 14294, 14295};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pVolley = spell;
+                }
+            }
+
+            // Deterrence
+            if (me->HasSpell(19263)){
+                m_spells.hunter.pDeterrence = sSpellMgr.GetSpellEntry(19263);
+            }
+
+            // Counterattack
+            if (me->HasSpell(19306)){
+                spellCandidates = {19306, 20909, 20910};
+                for (auto id: spellCandidates){
+                    const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                    if (!spell)
+                        continue;
+
+                    if (my_level >= spell->spellLevel){
+                        me->LearnSpell(id, false);
+                        m_spells.hunter.pCounterattack = spell;
+                    }
+                }
+            }
+
+            // Wyvern Sting
+            if (me->HasSpell(19386)){
+                spellCandidates = {19386, 24132, 24133};
+                for (auto id: spellCandidates){
+                    const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                    if (!spell)
+                        continue;
+
+                    if (my_level >= spell->spellLevel){
+                        me->LearnSpell(id, false);
+                        m_spells.hunter.pWyvernSting = spell;
+                    }
+                }
+            }
+
+            // Immolation Trap
+            spellCandidates = {13795, 14302, 14303, 14304, 14305};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pImmolationTrap = spell;
+                }
+            }
+
+            // Explosive Trap
+            spellCandidates = {13813, 14316, 14317};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pExplosiveTrap = spell;
+                }
+            }
+
+            // Freezing Trap
+            spellCandidates = {1499, 14310, 14311};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pFreezingTrap = spell;
+                }
+            }
+
+            // Frost Trap
+            {
+                uint32 id = 13809;
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (spell && my_level >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.hunter.pFrostTrap = spell;
+                }
+            }
 
             break;
         }
