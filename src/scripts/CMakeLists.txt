@@ -217,7 +217,6 @@ set (SCRIPTS_SRCS
     kalimdor/tanaris/tanaris.cpp
     kalimdor/tanaris/zulfarrak/instance_zulfarrak.cpp
     kalimdor/tanaris/zulfarrak/zulfarrak.cpp
-    kalimdor/teldrassil/teldrassil.cpp
     kalimdor/the_barrens/the_barrens.cpp
     kalimdor/the_barrens/razorfen_downs/instance_razorfen_downs.cpp
     kalimdor/the_barrens/razorfen_downs/razorfen_downs.cpp
@@ -287,7 +286,6 @@ include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/PrecompiledHeaders
   ${CMAKE_SOURCE_DIR}/src/shared
   ${CMAKE_SOURCE_DIR}/src/framework
-  ${CMAKE_SOURCE_DIR}/src/framework/Network
   ${CMAKE_SOURCE_DIR}/src/game
   ${CMAKE_SOURCE_DIR}/src/game/AI
   ${CMAKE_SOURCE_DIR}/src/game/Anticheat

@@ -19,6 +19,36 @@
 
 #include "Common.h"
 
+enum SpellEffectIndex
+{
+    EFFECT_INDEX_0 = 0,
+    EFFECT_INDEX_1 = 1,
+    EFFECT_INDEX_2 = 2
+};
+
+#define MAX_EFFECT_INDEX 3
+
+enum SpellFamily
+{
+    SPELLFAMILY_GENERIC     = 0,
+    SPELLFAMILY_UNK1        = 1, // events, holidays
+    // 2 - unused
+    SPELLFAMILY_MAGE        = 3,
+    SPELLFAMILY_WARRIOR     = 4,
+    SPELLFAMILY_WARLOCK     = 5,
+    SPELLFAMILY_PRIEST      = 6,
+    SPELLFAMILY_DRUID       = 7,
+    SPELLFAMILY_ROGUE       = 8,
+    SPELLFAMILY_HUNTER      = 9,
+    SPELLFAMILY_PALADIN     = 10,
+    SPELLFAMILY_SHAMAN      = 11,
+    SPELLFAMILY_UNK2        = 12,
+    SPELLFAMILY_POTION      = 13,
+    // 14 - unused
+    SPELLFAMILY_DEATHKNIGHT = 15,
+    // 16 - unused
+    SPELLFAMILY_UNK3        = 17
+};
 
 enum SpellTarget
 {
@@ -162,14 +192,24 @@ enum SpellMissInfo
     SPELL_MISS_NONE                    = 0,
     SPELL_MISS_MISS                    = 1,
     SPELL_MISS_RESIST                  = 2,
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_5_1
     SPELL_MISS_DODGE                   = 3,
     SPELL_MISS_PARRY                   = 4,
     SPELL_MISS_BLOCK                   = 5,
     SPELL_MISS_EVADE                   = 6,
     SPELL_MISS_IMMUNE                  = 7,
+#else
+    SPELL_MISS_IMMUNE                  = 3,
+    SPELL_MISS_EVADE                   = 4,
+    SPELL_MISS_DODGE                   = 5,
+    SPELL_MISS_PARRY                   = 6,
+    SPELL_MISS_BLOCK                   = 7,
+#endif
     SPELL_MISS_IMMUNE2                 = 8,
+    // below added in 1.5
     SPELL_MISS_DEFLECT                 = 9,
     SPELL_MISS_ABSORB                  = 10,
+    // below added in 1.6
     SPELL_MISS_REFLECT                 = 11
 };
 
@@ -179,8 +219,6 @@ enum SpellHitType
     SPELL_HIT_TYPE_CRIT                 = 0x02,
     SPELL_HIT_TYPE_HIT_DEBUG            = 0x04,
     SPELL_HIT_TYPE_SPLIT                = 0x08,
-    SPELL_HIT_TYPE_VICTIM_IS_ATTACKER   = 0x10,
-    SPELL_HIT_TYPE_ATTACK_TABLE_DEBUG   = 0x20
 };
 
 enum SpellDmgClass
@@ -998,6 +1036,7 @@ enum SpellAttributesInternal
     SPELL_INTERNAL_NON_PERIODIC_DISPEL      = 0x08000,
     SPELL_INTERNAL_PVE_HEARTBEAT            = 0x10000,
     SPELL_INTERNAL_CROWD_CONTROL            = 0x20000,
+    SPELL_INTERNAL_MUST_DELAY_EFFECTS       = 0x40000,
 };
 
 // Spell proc event related declarations

@@ -53,6 +53,7 @@
 #include "SocialMgr.h"
 
 using namespace Spells;
+using ExecuteLogInfo = WorldPackets::Spell::SpellLogExecute::ExecuteLogInfo;
 
 pEffect SpellEffects[TOTAL_SPELL_EFFECTS] =
 {
@@ -678,6 +679,7 @@ void Spell::EffectDummy(SpellEffectIndex effIdx)
                         default:
                             return;
                     };
+                    return;
                 }
                 case 8593:                                  // Symbol of life (restore creature to life)
                 {
@@ -773,7 +775,11 @@ void Spell::EffectDummy(SpellEffectIndex effIdx)
                     if (!m_originalCaster || m_originalCaster->GetTypeId() != TYPEID_PLAYER)
                         return;
 
-                    Creature* channelTarget = m_originalCaster->GetMap()->GetCreature(m_originalCaster->GetChannelObjectGuid());
+                    Spell* pChannel = m_originalCaster->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
+                    if (!pChannel)
+                        return;
+
+                    Creature* channelTarget = ToCreature(pChannel->GetChannelTarget());
 
                     if (!channelTarget)
                         return;
@@ -1293,7 +1299,16 @@ void Spell::EffectDummy(SpellEffectIndex effIdx)
                 {
                     if (unitTarget && m_casterUnit)
                     {
-                        m_casterUnit->Kill(unitTarget, nullptr);
+                        // kill is delayed so that spell visual can display properly
+                        m_casterUnit->m_Events.AddLambdaEventAtOffset(
+                            [caster = m_casterUnit, targetGuid = unitTarget->GetObjectGuid()]
+                            {
+                                if (!caster->IsInWorld())
+                                    return;
+                                if (Unit* target = caster->GetMap()->GetUnit(targetGuid))
+                                    if (target->IsAlive())
+                                        caster->Kill(target, nullptr);
+                            }, BATCHING_INTERVAL);
                     }
                     return;
                 }
@@ -1708,6 +1723,8 @@ void Spell::EffectPowerDrain(SpellEffectIndex effIdx)
 
         info.powerDrain.multiplier = manaMultiplier;
     }
+
+    AddExecuteLogInfo(effIdx, info);
 }
 
 void Spell::EffectSendEvent(SpellEffectIndex effIdx)
@@ -1717,13 +1734,14 @@ void Spell::EffectSendEvent(SpellEffectIndex effIdx)
     */
     DEBUG_FILTER_LOG(LOG_FILTER_SPELL_CAST, "Spell ScriptStart %u for spellid %u in EffectSendEvent ", m_spellInfo->EffectMiscValue[effIdx], m_spellInfo->Id);
 
-    // In some cases, the spell does not require a focus but still uses a game object
-    // eg. using an Altar or similar GO.
-    // Therefore, pass the GO as the target if this is the case.
-    GameObject* gObject = focusObject ? focusObject : m_targets.getGOTarget();
-
-    if (!sScriptMgr.OnProcessEvent(m_spellInfo->EffectMiscValue[effIdx], m_caster, gObject, true))
-        m_caster->GetMap()->ScriptsStart(sEventScripts, m_spellInfo->EffectMiscValue[effIdx], m_caster->GetObjectGuid(), gObject ? gObject->GetObjectGuid() : ObjectGuid());
+    WorldObject* pTarget = focusObject;
+    if (!pTarget)
+        pTarget = gameObjTarget;
+    if (!pTarget)
+        pTarget = unitTarget;
+    
+    if (!sScriptMgr.OnProcessEvent(m_spellInfo->EffectMiscValue[effIdx], m_caster, pTarget, true))
+        m_caster->GetMap()->ScriptsStart(sEventScripts, m_spellInfo->EffectMiscValue[effIdx], m_caster->GetObjectGuid(), pTarget ? pTarget->GetObjectGuid() : ObjectGuid());
 }
 
 void Spell::EffectPowerBurn(SpellEffectIndex effIdx)
@@ -2069,8 +2087,7 @@ void Spell::EffectOpenLock(SpellEffectIndex effIdx)
             return;
 
         // Arathi Basin banner opening !
-        if ((goInfo->type == GAMEOBJECT_TYPE_BUTTON && goInfo->button.noDamageImmune) ||
-                (goInfo->type == GAMEOBJECT_TYPE_GOOBER && goInfo->goober.losOK))
+        if (goInfo->type == GAMEOBJECT_TYPE_BUTTON && goInfo->button.noDamageImmune)
         {
             //CanUseBattleGroundObject() already called in CheckCast()
             // in battleground check

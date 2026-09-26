@@ -214,6 +214,7 @@ set (game_SRCS
     Server/Packets/Misc.cpp
     Server/Packets/Movement.cpp
     Server/Packets/Npc.cpp
+    Server/Packets/ObjectUpdate.cpp
     Server/Packets/Pet.cpp
     Server/Packets/Petition.cpp
     Server/Packets/Query.cpp
@@ -414,6 +415,7 @@ set (game_SRCS
     Objects/Corpse.h
     Objects/Creature.h
     Objects/CreatureDefines.h
+    Objects/DamageStructs.h
     Objects/DynamicObject.h
     Objects/GameObject.h
     Objects/GameObjectDefines.h
@@ -467,6 +469,7 @@ set (game_SRCS
     Server/Packets/Misc.h
     Server/Packets/Movement.h
     Server/Packets/Npc.h
+    Server/Packets/ObjectUpdate.h
     Server/Packets/Pet.h
     Server/Packets/Petition.h
     Server/Packets/Query.h
@@ -574,7 +577,6 @@ include_directories(
   ${CMAKE_SOURCE_DIR}/dep/recastnavigation
   ${CMAKE_SOURCE_DIR}/dep/include
   ${CMAKE_SOURCE_DIR}/src/framework
-  ${CMAKE_SOURCE_DIR}/src/framework/Network
   ${CMAKE_SOURCE_DIR}/src/shared
   ${CMAKE_BINARY_DIR}
   ${CMAKE_BINARY_DIR}/src/shared
@@ -605,12 +607,6 @@ source_group("Server"
   REGULAR_EXPRESSION Socket|Session|Opcodes|DBC
   FILES
     SharedDefines.h
-)
-
-source_group("Chat Commands"
-  REGULAR_EXPRESSION Level[0-9]
-  FILES
-    debugcmds.cpp
 )
 
 source_group("Tool"

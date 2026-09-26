@@ -110,7 +110,7 @@ static uint32 copseReclaimDelay[MAX_DEATH_COUNT] = { 30, 60, 120 };
 Player::Player(WorldSession* session) : Unit(),
     m_mover(this), m_camera(this), m_reputationMgr(this), m_saveDisabled(false), m_enableInstanceSwitch(true),
     m_currentTicketCounter(0), m_repopAtGraveyardPending(false), m_knownLanguagesMask(0),
-    m_honorMgr(this), m_personalXpRate(-1.0f), m_isStandUpScheduled(false), m_foodEmoteTimer(0)
+    m_honorMgr(this), m_personalXpRate(-1.0f), m_isStandUpScheduled(false)
 {
     m_objectType |= TYPEMASK_PLAYER;
     m_objectTypeId = TYPEID_PLAYER;
@@ -1240,7 +1240,6 @@ void Player::Update(uint32 update_diff, uint32 p_time)
     if (IsAlive())
     {
         m_regenTimer -= update_diff;
-        HandleFoodEmotes(update_diff);
         RegenerateAll();
     }
     else
@@ -1307,9 +1306,6 @@ void Player::Update(uint32 update_diff, uint32 p_time)
 
     if (m_currentCinematicEntry)
         UpdateCinematic(p_time);
-
-    // group update
-    SendUpdateToOutOfRangeGroupMembers();
 
     if (IsHasDelayedTeleport())
         TeleportTo(m_teleportDest, m_teleportOptions, m_teleportRecoverDelayed);
@@ -1499,6 +1495,13 @@ void Player::CinematicEnd()
     // When you make a new character, current area gets
     // explored after you finish watching the cinematic.
     CheckAreaExploreAndOutdoor();
+}
+
+void Player::Heartbeat()
+{
+    Unit::Heartbeat();
+
+    SendUpdateToOutOfRangeGroupMembers();
 }
 
 void Player::SetDeathState(DeathState s)
@@ -1833,7 +1836,7 @@ bool Player::SwitchInstance(uint32 newInstanceId)
 
     for (const auto& guid : m_visibleGUIDs)
     {
-        auto packet = std::make_unique<WorldPackets::Misc::DestroyObject>();
+        auto packet = std::make_unique<WorldPackets::ObjectUpdate::DestroyObject>();
         packet->objectGuid = guid;
         GetSession()->SendPacket(std::move(packet));
     }
@@ -2261,41 +2264,6 @@ void Player::RewardRage(uint32 damage, bool attacker)
     addRage *= sWorld.getConfig(CONFIG_FLOAT_RATE_POWER_RAGE_INCOME);
 
     ModifyPower(POWER_RAGE, uint32(addRage * 10));
-}
-
-void Player::HandleFoodEmotes(uint32 diff)
-{
-    // Handles the emotes for drinking and eating.
-    // According to sniffs there is a background timer going on that repeats independed from the time window where the aura applies.
-    // That's why we dont need to reset the timer on apply. In sniffs I have seen that the first call for the spell visual is totally random, then after
-    // 5 seconds over and over again which confirms my theory that we have a independed timer.
-    if (m_foodEmoteTimer <= diff)
-    {
-        AuraList const& lModRegenAuras = GetAurasByType(SPELL_AURA_MOD_REGEN);
-        AuraList const& lModPowerRegenAuras = GetAurasByType(SPELL_AURA_MOD_POWER_REGEN);
-
-        for (const auto pAura : lModRegenAuras)
-        {
-            if (pAura->GetSpellProto()->HasAura(SPELL_AURA_MOD_REGEN) && pAura->GetSpellProto()->HasAuraInterruptFlag(AURA_INTERRUPT_STANDING_CANCELS))
-            {
-                SendPlaySpellVisualKit(SPELL_VISUAL_KIT_FOOD);
-                break;
-            }
-        }
-
-        for (const auto pAura : lModPowerRegenAuras)
-        {
-            if (pAura->GetSpellProto()->HasAura(SPELL_AURA_MOD_POWER_REGEN) && pAura->GetSpellProto()->HasAuraInterruptFlag(AURA_INTERRUPT_STANDING_CANCELS))
-            {
-                SendPlaySpellVisualKit(SPELL_VISUAL_KIT_DRINK);
-                break;
-            }
-        }
-
-        m_foodEmoteTimer = 5000;
-    }
-    else
-        m_foodEmoteTimer -= diff;
 }
 
 void Player::RegenerateAll()
@@ -2928,11 +2896,7 @@ void Player::SetCheatDebugTargetInfo(bool on, bool notify)
             UpdateData newData;
             pUnit->BuildValuesUpdateBlockForPlayerWithFlags(newData, this, UpdateFieldFlags(updateFlags), true);
             if (newData.HasData())
-            {
-                WorldPacket newDataPacket;
-                newData.BuildPacket(&newDataPacket);
-                SendDirectMessage(&newDataPacket);
-            }
+                newData.Send(GetSession());
         }
     }
 }
@@ -3447,13 +3411,7 @@ void Player::InitStatsForLevel(bool reapplyMods)
 
 void Player::SendInitialSpells() const
 {
-    uint16 spellCount = 0;
-
-    WorldPacket data(SMSG_INITIAL_SPELLS, (1 + 2 + 4 * m_spells.size() + 2 + m_cooldownMap.size() * (2 + 2 + 2 + 4 + 4)));
-    data << uint8(0);
-
-    size_t countPos = data.wpos();
-    data << uint16(spellCount);                             // spell count placeholder
+    auto packet = std::make_unique<WorldPackets::Spell::InitialSpells>();
 
     for (const auto& spell : m_spells)
     {
@@ -3463,20 +3421,11 @@ void Player::SendInitialSpells() const
         if (!spell.second.active || spell.second.disabled)
             continue;
 
-        data << uint16(spell.first);
-        data << uint16(0);                                  // it's not slot id
-
-        spellCount += 1;
+        packet->knownSpells.emplace_back(uint16(spell.first), int16(0));
     }
 
-    data.put<uint16>(countPos, spellCount);                 // write real count value
-
     // write cooldown data
-    uint32 cdCount = 0;
-    const size_t cdCountPos = data.wpos();
-    data << uint16(0);
     auto currTime = sWorld.GetCurrentClockTime();
-
     for (auto& cdItr : m_cooldownMap)
     {
         auto& cdData = cdItr.second;
@@ -3500,17 +3449,9 @@ void Player::SendInitialSpells() const
             catCDDuration |= 0x80000000;
         }
 
-        data << uint16(cdData->GetSpellEntry()->Id);
-        data << uint16(cdData->GetItemId());                // cast item id
-        data << uint16(cdData->GetCategory());              // spell category
-        data << uint32(spellCDDuration);                    // cooldown
-        data << uint32(catCDDuration);                      // category cooldown
-        ++cdCount;
+        packet->cooldowns.emplace_back(uint16(cdData->GetSpellEntry()->Id), uint16(cdData->GetItemId()), uint16(cdData->GetCategory()), int32(spellCDDuration), int32(catCDDuration));
     }
-
-    data.put<uint16>(cdCountPos, cdCount);
-
-    GetSession()->SendPacket(&data);
+    GetSession()->SendPacket(std::move(packet));
 
     sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "CHARACTER: Sent Initial Spells");
 }
@@ -3547,9 +3488,18 @@ bool Player::AddSpell(uint32 spellId, bool active, bool learning, bool dependent
     }
 
     PlayerSpellState state = learning ? PLAYERSPELL_NEW : PLAYERSPELL_UNCHANGED;
-
+    TalentSpellPos const* talentPos = GetTalentSpellPos(spellId);
     bool disabledCase = false;
     bool supercededOld = false;
+    bool cannotSupercede = false;
+
+    // fixes Nature's Grasp displaying as not learned on talent interface after learning next rank
+#if SUPPORTED_CLIENT_BUILD <= CLIENT_BUILD_1_7_1
+    if (uint32 firstRank = sSpellMgr.GetFirstSpellInChain(spellId))
+        if (uint32 nextRank = sSpellMgr.GetSpellBookSuccessorSpellId(firstRank))
+            if (GetTalentSpellPos(firstRank) && !GetTalentSpellPos(nextRank))
+                cannotSupercede = true;
+#endif
 
     PlayerSpellMap::iterator itr = m_spells.find(spellId);
     if (itr != m_spells.end())
@@ -3558,9 +3508,9 @@ bool Player::AddSpell(uint32 spellId, bool active, bool learning, bool dependent
         bool dependent_set = false;
 
         // fix activate state for non-stackable low rank (and find next spell for !active case)
-        if (uint32 nextId = sSpellMgr.GetSpellBookSuccessorSpellId(spellInfo->Id))
+        if (uint32 nextId = sSpellMgr.GetSpellBookSuccessorSpellId(spellId))
         {
-            if (HasSpell(nextId))
+            if (!cannotSupercede && HasSpell(nextId))
             {
                 // high rank already known so this must !active
                 active = false;
@@ -3651,8 +3601,6 @@ bool Player::AddSpell(uint32 spellId, bool active, bool learning, bool dependent
             }
     }
 
-    TalentSpellPos const* talentPos = GetTalentSpellPos(spellId);
-
     if (!disabledCase) // skip new spell adding if spell already known (disabled spells case)
     {
         // talent: unlearn all other talent ranks (high and low)
@@ -3686,7 +3634,7 @@ bool Player::AddSpell(uint32 spellId, bool active, bool learning, bool dependent
         newspell.disabled  = disabled;
 
         // replace spells in action bars and spellbook to bigger rank if only one spell rank must be accessible
-        if (newspell.active && !newspell.disabled)
+        if (!cannotSupercede && newspell.active && !newspell.disabled)
         {
             for (auto& m_spell : m_spells)
             {
@@ -5057,41 +5005,30 @@ void Player::RepopAtGraveyard()
     else
         pClosestGrave = sObjectMgr.GetClosestGraveYard(GetPositionX(), GetPositionY(), GetPositionZ(), GetMapId(), GetTeam());
 
-    float orientation = GetOrientation();
-
-    // World of Warcraft Client Patch 1.8.0 (2005-10-11)
-    // - All graveyards that needed adjustment were changed so that a
-    //   character's spirit comes into the world facing toward the Spirit Healer.
-#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_7_1
     if (pClosestGrave)
-        if (float facing = sObjectMgr.GetWorldSafeLocFacing(pClosestGrave->ID))
-            orientation = facing;
-#endif
-
-    if (IsAlive())
     {
-        if (pClosestGrave)
-            TeleportTo(pClosestGrave->map_id, pClosestGrave->x, pClosestGrave->y, pClosestGrave->z, orientation, TELE_TO_NOT_UNSUMMON_PET, std::move(recover));
-    }
-    else
-    {
-        // if no grave found, stay at the current location
-        // and don't show spirit healer location
-        if (pClosestGrave)
+        // Release spirit from transport => Teleport alive at nearest graveyard.
+        if (!IsAlive() && GetTransport())
         {
-            // Release spirit from transport => Teleport alive at nearest graveyard.
-            if (GetTransport())
-            {
-                GetTransport()->RemovePassenger(this);
-                ResurrectPlayer(1.0f);
-            }
-            TeleportTo(pClosestGrave->map_id, pClosestGrave->x, pClosestGrave->y, pClosestGrave->z, orientation, TELE_TO_NOT_UNSUMMON_PET, std::move(recover));
+            GetTransport()->RemovePassenger(this);
+            ResurrectPlayer(1.0f);
         }
 
-        // Fix invisible spirit healer if you die close to graveyard.
-        if (IsInWorld())
-            UpdateVisibilityAndView();
+        // World of Warcraft Client Patch 1.8.0 (2005-10-11)
+        // - All graveyards that needed adjustment were changed so that a
+        //   character's spirit comes into the world facing toward the Spirit Healer.
+#if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_7_1
+        float orientation = sObjectMgr.GetWorldSafeLocFacing(pClosestGrave->ID);
+#else
+        float orientation = GetOrientation();
+#endif
+
+        TeleportTo(pClosestGrave->map_id, pClosestGrave->x, pClosestGrave->y, pClosestGrave->z, orientation, TELE_TO_NOT_UNSUMMON_PET, std::move(recover)); 
     }
+
+    // Fix invisible spirit healer if you die close to graveyard.
+    if (!IsAlive() && IsInWorld())
+        UpdateVisibilityAndView();
 }
 
 void Player::JoinedChannel(Channel* c)
@@ -5214,45 +5151,7 @@ float Player::GetMeleeCritFromAgility() const
 
 float Player::GetDodgeFromAgility() const
 {
-    float valLevel1 = 0.0f;
-    float valLevel60 = 0.0f;
-    // critical
-    switch (GetClass())
-    {
-        case CLASS_PALADIN:
-        case CLASS_SHAMAN:
-        case CLASS_DRUID:
-            valLevel1 = 4.6f;
-            valLevel60 = 20.0f;
-            break;
-        case CLASS_MAGE:
-            valLevel1 = 12.9f;
-            valLevel60 = 20.0f;
-            break;
-        case CLASS_ROGUE:
-            valLevel1 = 1.1f;
-            valLevel60 = 14.5f;
-            break;
-        case CLASS_HUNTER:
-            valLevel1 = 1.8f;
-            valLevel60 = 26.5f;
-            break;
-        case CLASS_PRIEST:
-            valLevel1 = 11.0f;
-            valLevel60 = 20.0f;
-            break;
-        case CLASS_WARLOCK:
-            valLevel1 = 8.4f;
-            valLevel60 = 20.0f;
-            break;
-        case CLASS_WARRIOR:
-            valLevel1 = 3.9f;
-            valLevel60 = 20.0f;
-            break;
-        default:
-            return 0.0f;
-    }
-    float classRate = valLevel1 * float(60.0f - GetLevel()) / 59.0f + valLevel60 * float(GetLevel() - 1.0f) / 59.0f;
+    float classRate = sObjectMgr.GetPlayerDodgePerAgility(GetClass(), GetLevel());
     return GetStat(STAT_AGILITY) / classRate;
 }
 
@@ -6108,8 +6007,8 @@ void Player::SaveRecallPosition()
 
 void Player::SendMessageToSet(std::unique_ptr<ServerPacket const> packet, bool self) const
 {
-    WorldPacket binaryPacket(packet->GetOpcode());
-    packet->AppendBodyTo(binaryPacket);
+    WorldPacket binaryPacket;
+    packet->WritePacket(binaryPacket);
     SendMessageToSet(&binaryPacket, self);
 }
 
@@ -11556,7 +11455,7 @@ void Player::AddItemToBuyBackSlot(Item* pItem, uint32 money, ObjectGuid vendorGu
             // found empty
             if (!m_items[i])
             {
-                slot = i;
+                oldest_slot = i;
                 break;
             }
 
@@ -11997,15 +11896,6 @@ void Player::ApplyEnchantment(Item* item, EnchantmentSlot slot, bool apply, bool
             AddEnchantmentDuration(item, slot, 0);
         }
     }
-}
-
-void Player::BuildEnchantmentLog(WorldPacket& data, ObjectGuid casterGuid, uint32 itemId, uint32 spellId, bool showAffiliation) const
-{
-    data << GetObjectGuid();
-    data << ObjectGuid(casterGuid); // message says enchant has faded if empty
-    data << uint32(itemId);
-    data << uint32(spellId);
-    data << uint8(showAffiliation); // only used if casterGuid is not empty
 }
 
 void Player::SendEnchantmentLog(ObjectGuid casterGuid, uint32 itemId, uint32 spellId) const
@@ -14582,7 +14472,10 @@ void Player::SendQuestUpdateAddItem(Quest const* pQuest, uint32 item_idx, uint32
         // Update player field and fire UNIT_QUEST_LOG_CHANGED for self for the current batch
         uint16 slot = FindQuestSlot(pQuest->GetQuestId());
         if (slot < MAX_QUEST_LOG_SIZE) {
-            SetQuestSlotCounter(slot + pQuest->GetReqCreatureOrGOcount(), uint8(item_idx), uint8(current + batchCount));
+            // item counters are stored after the creature or GO counters within the same quest slot
+            uint8 counterIdx = uint8(item_idx + pQuest->GetReqCreatureOrGOcount());
+            if (counterIdx < QUEST_OBJECTIVES_COUNT)
+                SetQuestSlotCounter(slot, counterIdx, uint8(current + batchCount));
         }
 
         count -= batchCount;
@@ -14732,7 +14625,7 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder* holder)
 
     // prevent login to locked character
     m_characterFlags = fields[15].GetUInt32();
-    if (m_characterFlags & (CHARACTER_FLAG_LOCKED_FOR_TRANSFER | CHARACTER_FLAG_DELETED_BY_TRANSFER))
+    if (m_characterFlags & (CHARACTER_FLAG_RENAME | CHARACTER_FLAG_LOCKED_FOR_TRANSFER | CHARACTER_FLAG_DELETED_BY_TRANSFER))
     {
         sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "%s attempts to login but character is locked!", guid.GetString().c_str());
         return false;
@@ -15405,9 +15298,10 @@ bool Player::IsAllowedToLoot(Creature const* creature)
         case FREE_FOR_ALL:
             return true;
         case MASTER_LOOT:
-            // On peut toujours voir ces items.
-            if (loot->hasOverThresholdItem())
-                return true;
+            // All group members may open the loot. With Master Loot, items below the
+            // threshold are directly lootable; items at/above threshold are protected
+            // at take-time in LootHandler (master-looter assignment only).
+            return true;
         case ROUND_ROBIN:
             // may only loot if the player is the loot roundrobin player
             // or if there are free/quest/conditional item for the player
@@ -18443,6 +18337,42 @@ void Player::InitDataForForm(bool reapplyMods)
     UpdateAttackPowerAndDamage(true);
 }
 
+bool Player::IsVendorItemVisible(Creature* vendor, VendorItem const* vendorItem, ItemPrototype const* itemProto)
+{
+    if (!vendor || !vendorItem || !itemProto)
+        return false;
+
+    if (IsGameMaster())
+        return true;
+
+    // class wrong item skip only for bindable case
+    if ((itemProto->AllowableClass & GetClassMask()) == 0 && itemProto->Bonding == BIND_WHEN_PICKED_UP)
+        return false;
+
+    // race wrong item skip always
+    if ((itemProto->AllowableRace & GetRaceMask()) == 0)
+        return false;
+
+    // when no faction required but rank > 0 will be used faction id from the vendor faction template to compare the rank
+    if (!itemProto->RequiredReputationFaction && itemProto->RequiredReputationRank > 0 &&
+        ReputationRank(itemProto->RequiredReputationRank) > GetReputationRank(vendor->GetFactionId()))
+        return false;
+
+    // World of Warcraft Client Patch 1.7.0 (2005-09-13)
+    // - Argent Dawn, Timbermaw, Zandalar and Arathi Basin vendors now show
+    //   you their entire inventory regardless of current reputation, allowing
+    //   players to peruse their full range of wares.The items in question
+    //   now require the appropriate reputation level to make use of them.
+#if SUPPORTED_CLIENT_BUILD <= CLIENT_BUILD_1_6_1
+    if (itemProto->RequiredReputationFaction && itemProto->RequiredReputationRank > 0 &&
+        ReputationRank(itemProto->RequiredReputationRank) > GetReputationRank(itemProto->RequiredReputationFaction))
+        return false;
+#endif
+
+    return !vendorItem->conditionId ||
+        IsConditionSatisfied(vendorItem->conditionId, this, vendor->GetMap(), vendor, CONDITION_FROM_VENDOR);
+}
+
 // Return true is the bought item has a max count to force refresh of window by caller
 bool Player::BuyItemFromVendor(ObjectGuid vendorGuid, uint32 item, uint8 count, uint8 bag, uint8 slot)
 {
@@ -18494,7 +18424,7 @@ bool Player::BuyItemFromVendor(ObjectGuid vendorGuid, uint32 item, uint8 count, 
     }
 
     VendorItem const* crItem = vendorslot < vCount ? vItems->GetItem(vendorslot) : tItems->GetItem(vendorslot - vCount);
-    if (!crItem || crItem->item != item)                    // store diff item (cheating)
+    if (!crItem || crItem->item != item || !IsVendorItemVisible(pCreature, crItem, pProto))
     {
         SendBuyError(BUY_ERR_CANT_FIND_ITEM, pCreature, item, 0);
         return false;
@@ -18532,12 +18462,7 @@ bool Player::BuyItemFromVendor(ObjectGuid vendorGuid, uint32 item, uint8 count, 
         return false;
     }
 
-    if (crItem->conditionId && !IsGameMaster() && !IsConditionSatisfied(crItem->conditionId, this, pCreature->GetMap(), pCreature, CONDITION_FROM_VENDOR))
-    {
-        SendBuyError(BUY_ERR_CANT_FIND_ITEM, pCreature, item, 0);
-        return false;
-    }
-
+    // Visibility, including vendor conditions, was validated above.
     uint32 price  = pProto->BuyPrice * count;
 
     // reputation discount
@@ -18599,9 +18524,20 @@ bool Player::BuyItemFromVendor(ObjectGuid vendorGuid, uint32 item, uint8 count, 
 
     uint32 new_count = pCreature->UpdateVendorItemCurrentCount(crItem, totalCount);
 
+    // SMSG_LIST_INVENTORY numbers only visible rows. Report that same
+    // compact slot so the client updates the item it just purchased.
+    uint32 clientVendorSlot = 0;
+    for (size_t i = 0; i <= vendorslot; ++i)
+    {
+        VendorItem const* listedItem = i < vCount ? vItems->GetItem(i) : tItems->GetItem(i - vCount);
+        ItemPrototype const* listedProto = listedItem ? sObjectMgr.GetItemPrototype(listedItem->item) : nullptr;
+        if (IsVendorItemVisible(pCreature, listedItem, listedProto))
+            ++clientVendorSlot;
+    }
+
     auto packet = std::make_unique<WorldPackets::Item::BuyItemResponse>();
     packet->vendorGuid = pCreature->GetObjectGuid();
-    packet->vendorSlot = vendorslot + 1;
+    packet->vendorSlot = clientVendorSlot;
     packet->newCount = crItem->maxcount > 0 ? new_count : 0xFFFFFFFF;
     packet->purchaseCount = count;
     GetSession()->SendPacket(std::move(packet));
@@ -21072,17 +21008,17 @@ void Player::_SaveBGData()
 
 void Player::SendClearCooldown(uint32 spellId, Unit const* target) const
 {
-    auto clearCooldownPacket = std::make_unique<WorldPackets::Spell::ClearCooldown>();
-    clearCooldownPacket->spellId = spellId;
-    clearCooldownPacket->targetGuid = target->GetObjectGuid();
-    GetSession()->SendPacket(std::move(clearCooldownPacket));
+    auto packet = std::make_unique<WorldPackets::Spell::ClearCooldown>();
+    packet->spellId = spellId;
+    packet->targetGuid = target->GetObjectGuid();
+    GetSession()->SendPacket(std::move(packet));
 }
 
 void Player::SendClearAllCooldowns(Unit const* target) const
 {
-    auto cooldownCheatPacket = std::make_unique<WorldPackets::Spell::CooldownCheat>();
-    cooldownCheatPacket->targetGuid = target->GetObjectGuid();
-    GetSession()->SendPacket(std::move(cooldownCheatPacket));
+    auto packet = std::make_unique<WorldPackets::Spell::CooldownCheat>();
+    packet->targetGuid = target->GetObjectGuid();
+    GetSession()->SendPacket(std::move(packet));
 }
 
 void Player::SendSpellCooldown(uint32 spellId, Milliseconds cooldown, ObjectGuid target) const
@@ -21098,16 +21034,16 @@ void Player::SendSpellCooldown(uint32 spellId, Milliseconds cooldown, ObjectGuid
 
 void Player::SendSpellRemoved(uint32 spellId) const
 {
-    auto removedSpellPacket = std::make_unique<WorldPackets::Spell::RemovedSpell>();
-    removedSpellPacket->spellId = spellId;
-    GetSession()->SendPacket(std::move(removedSpellPacket));
+    auto packet = std::make_unique<WorldPackets::Spell::RemovedSpell>();
+    packet->spellId = spellId;
+    GetSession()->SendPacket(std::move(packet));
 }
 
 void Player::SendChannelUpdate(uint32 time) const
 {
-    WorldPacket data(MSG_CHANNEL_UPDATE, 4);
-    data << uint32(time);
-    SendDirectMessage(&data);
+    auto packet = std::make_unique<WorldPackets::Spell::ChannelUpdate>();
+    packet->duration = time;
+    GetSession()->SendPacket(std::move(packet));
 }
 
 void Player::UpdateChannelStartPosition()
@@ -21804,7 +21740,7 @@ void Player::SendDestroyGroupMembers(bool includingSelf)
         {
             if (!includingSelf && itr.guid == GetObjectGuid())
                 continue;
-            auto packet = std::make_unique<WorldPackets::Misc::DestroyObject>();
+            auto packet = std::make_unique<WorldPackets::ObjectUpdate::DestroyObject>();
             packet->objectGuid = itr.guid;
             GetSession()->SendPacket(std::move(packet));
             m_visibleGUIDs.erase(itr.guid);

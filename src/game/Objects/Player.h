@@ -759,7 +759,10 @@ class Player final: public Unit
 
         // Initializes a new Player object that was not loaded from the database.
         bool Create(uint32 guidlow, std::string const& name, uint8 race, uint8 class_, uint8 gender, uint8 skin, uint8 face, uint8 hairStyle, uint8 hairColor, uint8 facialHair);
+
         void Update(uint32 update_diff, uint32 time) override;
+        void Heartbeat() override;
+
         static bool BuildEnumData(const std::unique_ptr<QueryResult>& result,  WorldPacket* pData);
 
         /**
@@ -879,7 +882,6 @@ class Player final: public Unit
         void RemoveAllEnchantments(EnchantmentSlot slot);
         void AddEnchantmentDuration(Item* item, EnchantmentSlot slot, uint32 duration);
         void SendEnchantmentDurations() const;
-        void BuildEnchantmentLog(WorldPacket& data, ObjectGuid casterGuid, uint32 itemId, uint32 spellId, bool showAffiliation) const;
         void AddItemDurations(Item* item);
         void RemoveItemDurations(Item const* item);
         void SendItemDurations() const;
@@ -997,6 +999,7 @@ class Player final: public Unit
         void SendBuyError(BuyResult msg, Creature const* pCreature, uint32 item, uint32 param) const;
         void SendSellError(SellResult msg, Creature const* pCreature, ObjectGuid itemGuid, uint32 param) const;
         void SendOpenContainer(ObjectGuid itemGuid) const;
+        bool IsVendorItemVisible(Creature* vendor, VendorItem const* vendorItem, ItemPrototype const* itemProto);
         void AddWeaponProficiency(uint32 newflag) { m_weaponProficiency |= newflag; }
         void AddArmorProficiency(uint32 newflag) { m_armorProficiency |= newflag; }
         uint32 GetWeaponProficiency() const { return m_weaponProficiency; }
@@ -1436,12 +1439,10 @@ class Player final: public Unit
         bool m_canDualWield;
         float m_ammoDPS;
         float m_personalXpRate;
-        uint32 m_foodEmoteTimer;
 
         void RegenerateAll();
         void Regenerate(Powers power);
         void RegenerateHealth();
-        void HandleFoodEmotes(uint32 diff);
 
         static float GetHealthBonusFromStamina(float stamina);
         static float GetManaBonusFromIntellect(float intellect);

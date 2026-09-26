@@ -1344,6 +1344,15 @@ bool SpellMgr::IsProfessionSpell(uint32 spellId)
     return IsProfessionSkill(skill);
 }
 
+bool SpellMgr::IsTradeskillSpell(uint32 spellId)
+{
+    SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(spellId);
+    if (!spellInfo)
+        return false;
+
+    return spellInfo->Attributes & SPELL_ATTR_IS_TRADESKILL;
+}
+
 bool SpellMgr::IsPrimaryProfessionSpell(uint32 spellId)
 {
     SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(spellId);
@@ -3321,6 +3330,15 @@ namespace SpellInternal
         return true;
     }
 
+    // These spells should be delayed even if delay is turned off to function properly.
+    bool MustDelayEffects(SpellEntry const* spellInfo)
+    {
+        if (spellInfo->HasEffect(SPELL_EFFECT_SPIRIT_HEAL))
+            return true;
+
+        return false;
+    }
+
     bool IsBinary(SpellEntry const* spellInfo)
     {
         bool isBinary = false;
@@ -3500,7 +3518,7 @@ void SpellMgr::AssignInternalSpellFlags()
             if (SpellInternal::IsReflectableSpell(pSpellEntry.get()))
                 pSpellEntry->Internal |= SPELL_INTERNAL_REFLECTABLE;
 
-            if (sWorld.getConfig(CONFIG_UINT32_SPELL_EFFECT_DELAY) && SpellInternal::IsSpellWithDelayableEffects(pSpellEntry.get()))
+            if (SpellInternal::IsSpellWithDelayableEffects(pSpellEntry.get()))
                 pSpellEntry->Internal |= SPELL_INTERNAL_DELAYABLE_EFFECTS;
 
             if (SpellInternal::IsBinary(pSpellEntry.get()))
@@ -3514,6 +3532,9 @@ void SpellMgr::AssignInternalSpellFlags()
 
             if (SpellInternal::IsCCSpell(pSpellEntry.get()))
                 pSpellEntry->Internal |= SPELL_INTERNAL_CROWD_CONTROL;
+
+            if (SpellInternal::MustDelayEffects(pSpellEntry.get()))
+                pSpellEntry->Internal |= SPELL_INTERNAL_MUST_DELAY_EFFECTS;
 
             pSpellEntry->AllowedTargetMask = SpellInternal::GetAllowedTargetMask(pSpellEntry.get());
         }

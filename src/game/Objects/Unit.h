@@ -121,37 +121,6 @@ struct WeaponDamageInfo
     SpellSchools school;
 };
 
-struct SubDamageInfo
-{
-    SpellSchoolMask damageSchoolMask = SPELL_SCHOOL_MASK_NORMAL;
-    uint32 damage = 0;
-    uint32 absorb = 0;
-    int32 resist = 0;
-};
-
-// Struct for use in Unit::CalculateMeleeDamage
-// Need create structure like in SMSG_ATTACKERSTATEUPDATE opcode
-struct CalcDamageInfo
-{
-    Unit* attacker = nullptr;             // Attacker
-    Unit* target = nullptr;               // Target for damage
-    uint32 totalDamage = 0;
-    uint32 totalAbsorb = 0;
-    int32 totalResist = 0;
-    SubDamageInfo subDamage[MAX_ITEM_PROTO_DAMAGES] = {};
-    uint32 blocked_amount = 0;
-    uint32 HitInfo = HITINFO_NORMALSWING;
-    uint32 TargetState = VICTIMSTATE_UNAFFECTED;
-
-    // Helper
-    WeaponAttackType attackType = BASE_ATTACK;
-    uint32 procAttacker = 0;
-    uint32 procVictim = 0;
-    uint32 procEx = 0;
-    uint32 cleanDamage = 0;                        // Used only for rage calculation
-    MeleeHitOutcome hitOutCome = MELEE_HIT_EVADE;  // TODO: remove this field (need use TargetState)
-};
-
 struct SpellPeriodicAuraLogInfo
 {
     SpellPeriodicAuraLogInfo(Aura* _aura, uint32 _damage, uint32 _absorb, int32 _resist, float _multiplier)
@@ -352,6 +321,9 @@ class Unit : public SpellCaster
         void RemoveFromWorld() override;
         void CleanupsBeforeDelete() override;               // used in ~Creature/~Player (or before mass creature delete to remove cross-references to already deleted units)
         void Update(uint32 update_diff, uint32 time) override;
+
+        void Heartbeat() override;
+        void TriggerAuraHeartbeat();
 
         /*********************************************************/
         /***                   STAT SYSTEM                     ***/
@@ -853,6 +825,7 @@ class Unit : public SpellCaster
         float RollMagicResistanceMultiplierOutcomeAgainst(float resistanceChance, SpellSchoolMask schoolMask, DamageEffectType dmgType, SpellEntry const* spellProto) const;
         bool IsSpellPartiallyBlocked(SpellCaster const* pCaster, SpellEntry const* spellProto, WeaponAttackType attackType = BASE_ATTACK) const;
         bool RollSpellBlockChanceOutcome(SpellCaster const* pCaster, WeaponAttackType attackType) const;
+        float GetSpellCritChance(Unit const* pVictim, SpellEntry const* spellProto, SpellSchoolMask schoolMask, WeaponAttackType attackType = BASE_ATTACK, Spell* spell = nullptr) const;
         bool IsSpellCrit(Unit const* pVictim, SpellEntry const* spellProto, SpellSchoolMask schoolMask, WeaponAttackType attackType = BASE_ATTACK, Spell* spell = nullptr) const final;
         bool IsEffectResist(SpellEntry const* spell, int eff) const; // SPELL_AURA_MOD_MECHANIC_RESISTANCE
 
@@ -1007,7 +980,7 @@ class Unit : public SpellCaster
 
         void AttackerStateUpdate(Unit* pVictim, WeaponAttackType attType = BASE_ATTACK, bool extra = false);
         void SendAttackStateUpdate(CalcDamageInfo const* damageInfo) const;
-        void SendAttackStateUpdate(uint32 HitInfo, Unit const* target, SpellSchoolMask damageSchoolMask, uint32 Damage, uint32 AbsorbDamage, int32 Resist, VictimState TargetState, uint32 BlockedAmount) const;
+        void SendAttackStateUpdate(uint32 hitInfo, Unit const* target, SpellSchoolMask damageSchoolMask, uint32 damage, uint32 absorbDamage, int32 resist, VictimState targetState, uint32 blockedAmount) const;
         void SendMeleeAttackStop(Unit const* victim) const;
         void SendMeleeAttackStart(Unit const* pVictim) const;
 
@@ -1017,14 +990,15 @@ class Unit : public SpellCaster
         void UpdateReactives(uint32 p_time);
 
         virtual float GetWeaponBasedAuraModifier(WeaponAttackType attType, AuraType auraType) const = 0;
-        float MeleeMissChanceCalc(Unit const* pVictim, WeaponAttackType attType) const;
         void CalculateMeleeDamage(Unit* pVictim, uint32 damage, CalcDamageInfo* damageInfo, WeaponAttackType attackType = BASE_ATTACK);
         void UnitDamaged(ObjectGuid from, uint32 damage) { m_damageTakenHistory[from] += damage; m_lastDamageTaken = 0; }
         void DealMeleeDamage(CalcDamageInfo const* damageInfo, bool durabilityLoss);
         float CalculateDamage(WeaponAttackType attType, bool normalized, uint8 index = 0) const;
         float MeleeDamageBonusTaken(SpellCaster const* pCaster, float pdamage, WeaponAttackType attType, SpellEntry const* spellProto = nullptr, SpellEffectIndex effectIndex = EFFECT_INDEX_0, DamageEffectType damagetype = DIRECT_DAMAGE, uint32 stack = 1, Spell* spell = nullptr, bool flat = true);
-        MeleeHitOutcome RollMeleeOutcomeAgainst(Unit const* pVictim, WeaponAttackType attType) const;
-        MeleeHitOutcome RollMeleeOutcomeAgainst(Unit const* pVictim, WeaponAttackType attType, int32 crit_chance, int32 miss_chance, int32 dodge_chance, int32 parry_chance, int32 block_chance, bool SpellCasted) const;
+        void RollDazeOutcome(CalcDamageInfo* damageInfo);
+        float GetGlancingBlowDamageMultiplier(Unit const* pVictim, WeaponAttackType attType) const;
+        void SetDamageIndependentHitInfoFlags(uint32& outHitInfo, Unit const* pVictim, WeaponAttackType attType) const;
+        void SetDamageDependentHitInfoFlags(uint32& outHitInfo, Unit const* pVictim, uint32 victimState, uint32 totalDamage, uint32 cleanDamage, uint32 blockedDamage, uint32 absorbedDamage, uint32 resistedDamage) const;
 
         // Extra attacks methods
         void ResetExtraAttacks() { m_extraAttacks = 0; }
@@ -1391,8 +1365,6 @@ class Unit : public SpellCaster
         float GetJumpInitialSpeed() const { return m_jumpInitialSpeed; }
 
         // Terrain checks
-        virtual bool IsInWater() const;
-        virtual bool IsUnderwater() const;
         template<class T>
         bool CanSwimAtPosition(T const& pos) const
         {
