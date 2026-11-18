@@ -31,23 +31,6 @@
 #include <list>
 #include <vector>
 
-struct EnchStoreItem
-{
-    uint32  ench;
-    float   chance;
-
-    EnchStoreItem()
-        : ench(0), chance(0) {}
-
-    EnchStoreItem(uint32 _ench, float _chance)
-        : ench(_ench), chance(_chance) {}
-};
-
-typedef std::vector<EnchStoreItem> EnchStoreList;
-typedef std::unordered_map<uint32, EnchStoreList> EnchantmentStore;
-
-static EnchantmentStore RandomItemEnch;
-
 void LoadRandomEnchantmentsTable()
 {
     RandomItemEnch.clear();                                 // for reload case
@@ -126,4 +109,18 @@ uint32 GetItemEnchantMod(uint32 entry)
     }
 
     return 0;
+}
+EnchStoreList GetEnchStoreListByItemRandomProperty(uint32 randomProperty) {
+    EnchStoreList list;
+
+    if (!randomProperty)
+        return list;
+
+    EnchantmentStore::const_iterator tab = RandomItemEnch.find(randomProperty);
+    if (tab == RandomItemEnch.end()){
+        sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Item RandomProperty id #%u used in `item_template` but it doesn't have records in `item_enchantment_template` table.", randomProperty);
+        return list;
+    }
+
+    return tab->second;
 }

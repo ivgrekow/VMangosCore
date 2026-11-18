@@ -1250,14 +1250,14 @@ void PartyBotAI::UpdateInCombatAI_Paladin()
                 return;
         }
 
-        if (m_spells.paladin.pTurnEvil &&
+        if (m_spells.paladin.pTurnUndead &&
             m_role != ROLE_TANK)
         {
             Unit* pAttacker = SelectAttackerDifferentFrom(me->GetVictim());
             if (pAttacker && pAttacker->GetCreatureType() == CREATURE_TYPE_UNDEAD &&
-                CanTryToCastSpell(pAttacker, m_spells.paladin.pTurnEvil))
+                CanTryToCastSpell(pAttacker, m_spells.paladin.pTurnUndead))
             {
-                if (DoCastSpell(pAttacker, m_spells.paladin.pTurnEvil) == SPELL_CAST_OK)
+                if (DoCastSpell(pAttacker, m_spells.paladin.pTurnUndead) == SPELL_CAST_OK)
                     return;
             }
         }
