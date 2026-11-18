@@ -12,9 +12,18 @@
 #include "ObjectMgr.h"
 #include "ItemEnchantmentMgr.h"
 #include "Util.h"
+#include "Utilities/Random.h"
+#include "TradeData.h"
 
-#define WB_UPDATE_INTERVAL 1000
+#define WB_UPDATE_INTERVAL 300
 #define WB_UPDATE_MOVEMENT_INTERVAL 500
+
+enum WorldBotMetrics {
+    WB_METRIC_DISTANCE_TO_LEADER,
+    WB_METRIC_DISTANCE_TO_TARGET_UNIT,
+    WB_METRIC_DISTANCE_TO_TARGET_POS,
+    WB_METRIC_MAX_LENGTH
+};
 
 class WorldBotAI : public PlayerBotAI
 {
@@ -31,9 +40,12 @@ public:
             m_updateTimer.Reset(2000);
         }
         
+        void SetTimerTracker(int32 value){
+            m_updateTimer.Reset(value);
+        }
         bool OnSessionLoaded(PlayerBotEntry* entry, WorldSession* sess) final;
         void OnPlayerLogin() final;
-        void UpdateAI(uint32 diff);
+        void UpdateAI(uint32 diff) override;
         void OnPacketReceived(WorldPacket const* packet) override;
         void PopulateSpellData();
         void InitTalentsByRandomSpec();
@@ -47,15 +59,26 @@ public:
         // items
         void UseMount();
         void AddItemToInventory(uint32 itemId, uint32 count = 1);
-        void AddAllSpellReagents();
+        void AddAllClassSpellReagents();
         void AddRangedWeaponAmmo();
         bool UseItemEffect(Item* pItem);
+        void CastEnchantSpell(uint32 id);
+        inline uint32 GetGatherProfessionId() { return m_gatherProfession; }
+        inline uint32 GetCraftProfessionId() { return m_craftProfession; }
+        std::vector<const SpellEntry*> GetProffessionSpellsFilterByRegex(std::string filter) const;
         
         // movement
         void UpdateMovements();
         void FollowLeader();
+        void SetLeader(Player* pLeader);
+        void SetTravelJourney(std::vector<WorldBotConfig::TravelNode> travel, Position targetPos);
         void TravelToTarget(Unit* pTarget);
         void TravelToPoint(uint32 mapId, Position pos);
+        void ClearTravelData(bool clearTargetPos = false);
+        void FlushMetrics(){
+            for (float& num: m_metrics)
+                num = -1.0f;
+        }
         
         // combat
         bool IsInDuel() const;
@@ -71,12 +94,21 @@ private:
     ShortTimeTracker m_updateTimer;
     Item* m_ridingPet = nullptr;
     std::unordered_map<std::string /*spell name*/, std::vector<const SpellEntry*> /*ranks*/> m_spellBook;
-    std::vector<const SpellEntry*> m_proffessionBook;
+    std::vector<const SpellEntry*> m_professionBook;
     std::string m_currentSpec;
+    uint32 m_gatherProfession = 0;
+    uint32 m_craftProfession = 0;
     uint32 m_honorRank = 0;
     bool m_isInitialized = false;
-    ShortTimeTracker m_movementTimer;
-    std::vector<WorldBotConfig::TravelNode> m_travelPath;
+    uint32 m_currentNodeIndex = 0;
+    std::vector<WorldBotConfig::TravelNode> m_travelNodeVector;
+    WorldBotConfig::TravelNode m_currentNode;
+    uint32 m_travelNodePathNR = 0;
+    std::vector<WorldBotConfig::TravelNodePath> m_travelNodePath;
+    Position m_targetPos;
+    std::vector<float> m_metrics {std::vector<float>(WB_METRIC_MAX_LENGTH, -1.0f)};
+
+    Unit* m_primaryTarget = nullptr;
 
     std::vector<RaidTargetIcon> m_marksToCC;
     std::vector<RaidTargetIcon> m_marksToFocus;
@@ -98,6 +130,8 @@ private:
         std::map<uint32 /*slot*/, std::vector<ItemPrototype const*>>& itemsPerSlot,
         uint32 invSlot, bool isNeedToEquip /* true -- equip, false -- store */);
     void GenerateInventorySlotPermEnchant(Item*);
+    void AddAllProfessionSpellReagents(uint32 id);
+    void AddAllProfessionSpellTotems(uint32 id);
     void PopulateProffessionSpells();
     void GenerateBags();
     void GenerateMounts();

@@ -125,19 +125,23 @@ ChatCommand * ChatHandler::getCommandTable()
 
     static ChatCommand battleBotCommandTable[] =
     {
-        { "add",          SEC_PLAYER,    true, nullptr,            "Add a new bot", battleBotAddCommandTable },
-        { "remove",       SEC_PLAYER,    false, &ChatHandler::HandleBattleBotRemoveCommand,       "", nullptr },
-        { "removeall",    SEC_PLAYER,    true,  &ChatHandler::HandleBattleBotRemoveAllCommand,    "", nullptr },
-        { "showpath",     SEC_PLAYER,    false, &ChatHandler::HandleBattleBotShowPathCommand,     "", nullptr },
-        { "showallpaths", SEC_PLAYER,    false, &ChatHandler::HandleBattleBotShowAllPathsCommand, "", nullptr },
+        { "add",          SEC_ADMINISTRATOR,    true, nullptr,            "Add a new bot", battleBotAddCommandTable },
+        { "remove",       SEC_ADMINISTRATOR,    false, &ChatHandler::HandleBattleBotRemoveCommand,       "", nullptr },
+        { "removeall",    SEC_ADMINISTRATOR,    true,  &ChatHandler::HandleBattleBotRemoveAllCommand,    "", nullptr },
+        { "showpath",     SEC_ADMINISTRATOR,    false, &ChatHandler::HandleBattleBotShowPathCommand,     "", nullptr },
+        { "showallpaths", SEC_ADMINISTRATOR,    false, &ChatHandler::HandleBattleBotShowAllPathsCommand, "", nullptr },
         { nullptr,        0,                    false, nullptr,                                          "", nullptr },
     };
     
     static ChatCommand worldBotCommandTable[] =
     {
-        { "add",          SEC_ADMINISTRATOR,    false, &ChatHandler::HandleWorldBotAddCommand,           "", nullptr },
-        { "remove",       SEC_ADMINISTRATOR,    false, &ChatHandler::HandleWorldBotRemoveCommand,        "", nullptr },
-        { "recordpoint",  SEC_ADMINISTRATOR,    false, &ChatHandler::HandleWorldBotRecordPointCommand,   "", nullptr },
+        { "add",          SEC_PLAYER,    false, &ChatHandler::HandleWorldBotAddCommand,           "", nullptr },
+        { "findpath",     SEC_PLAYER,    false, &ChatHandler::HandleWorldBotFindPathCommand,      "", nullptr },
+        { "enchant",      SEC_PLAYER,    false, &ChatHandler::HandleWorldBotCastEnchantCommand,   "", nullptr },
+        { "profinfo",     SEC_PLAYER,    false, &ChatHandler::HandleWorldBotProfInfoCommand,      "", nullptr },
+        { "remove",       SEC_PLAYER,    false, &ChatHandler::HandleWorldBotRemoveCommand,        "", nullptr },
+        { "recordpoint",  SEC_PLAYER,    false, &ChatHandler::HandleWorldBotRecordPointCommand,   "", nullptr },
+        { "spawn",        SEC_PLAYER,    false, &ChatHandler::HandleWorldBotSpawnCommand,         "", nullptr },
         { nullptr,        0,                    false, nullptr,                                          "", nullptr },
     };
 

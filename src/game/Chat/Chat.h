@@ -307,8 +307,12 @@ class ChatHandler
         bool HandleBattleBotShowAllPathsCommand(char* args);
 
         bool HandleWorldBotAddCommand(char * args);
+        bool HandleWorldBotFindPathCommand(char * args);
+        bool HandleWorldBotCastEnchantCommand(char * args);
+        bool HandleWorldBotProfInfoCommand(char * args);
         bool HandleWorldBotRemoveCommand(char * args);
         bool HandleWorldBotRecordPointCommand(char * args);
+        bool HandleWorldBotSpawnCommand(char * args);
 
         // spell_disabled
         bool HandleReloadSpellDisabledCommand(char *args);

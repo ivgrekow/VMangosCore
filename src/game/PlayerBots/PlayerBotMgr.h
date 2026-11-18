@@ -6,6 +6,7 @@
 #include "Database/DatabaseEnv.h"
 #include "PlayerBotAI.h"
 #include "BattleGroundDefines.h"
+#include "PathFinder.h"
 
 #include <vector>
 #include <memory>
@@ -76,33 +77,108 @@ struct WorldBotConfig {
         uint32 map_id;
         float x, y, z;
         bool linked;
+
+        TravelNode(){
+            this->id = 0;
+            this->name = "";
+            this->map_id = 0;
+            this->x = 0.0f;
+            this->y = 0.0f;
+            this->z = 0.0f;
+            this->linked = false;
+        }
+
+        TravelNode(uint32 id, std::string name, uint32 map_id, float x, float y, float z, bool linked){
+            this->id = id;
+            this->name = name;
+            this->map_id = map_id;
+            this->x = x;
+            this->y = y;
+            this->z = z;
+            this->linked = linked;
+        }
+
+        void operator=(const TravelNode& other){
+            id = other.id;
+            name = other.name;
+            map_id = other.map_id;
+            x = other.x;
+            y = other.y;
+            z = other.z;
+            linked = other.linked;
+        }
+
+        bool operator==(const TravelNode& other) const {
+            if (id == other.id &&
+                name == other.name &&
+                map_id == other.map_id &&
+                x == other.x && y == other.y && z == other.z &&
+                linked == other.linked)
+                return true;
+            else
+                return false;
+        }
+        bool operator!=(const TravelNode& other) const {
+            if (id != other.id ||
+                name != other.name ||
+                map_id != other.map_id ||
+                x != other.x || y != other.y || z != other.z ||
+                linked != other.linked)
+                return true;
+            else
+                return false;
+        }
     };
 
     struct TravelNodeLink {
-        uint32 node_id; // prim key
-        uint32 to_node_id; // prim key
-        uint8 type;
-        uint32 object;
-        float distance;
-        float swim_distance;
-        float extra_cost;
-        uint8 calculated;
-        uint8 max_creature0;
-        uint8 max_creature1;
-        uint8 max_creature2;
+        uint32 node_id = 0; // prim key
+        uint32 to_node_id = 0; // prim key
+        uint8 type = 0;
+        uint32 object = 0;
+        float distance = 0.0f;
+        float swim_distance = 0.0f;
+        float extra_cost = 0.0f;
+        uint8 calculated = 0;
+        uint8 max_creature0 = 0;
+        uint8 max_creature1 = 0;
+        uint8 max_creature2 = 0;
+
+        TravelNodeLink() = default;
     };
 
     struct TravelNodePath {
-        uint32 node_id; // prim key
-        uint32 to_node_id; // prim key
-        uint32 nr; // prim key
-        uint32 map_id;
-        float x, y, z;
+        uint32 node_id = 0; // prim key
+        uint32 to_node_id = 0; // prim key
+        uint32 nr = 0; // prim key
+        uint32 map_id = 0;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+
+        TravelNodePath() = default;
+
+        Position GetPosition() const{
+            return Position(x, y, z, 10.0f);
+        }
+    };
+
+    struct TaxiFlightNodeInfo{
+        uint32 id = 0;
+        uint32 mount_creature_id1 = 0;
+        uint32 mount_creature_id2 = 0;
+
+        TaxiFlightNodeInfo() = default;
     };
 
     std::vector<TravelNode> travelNode;
     std::vector<TravelNodeLink> travelNodeLink;
     std::vector<TravelNodePath> travelNodePath;
+    std::vector<TaxiFlightNodeInfo> taxiNodesInfo;
+
+    uint32 currentNodeId = 0;
+    uint32 previousNodeId = 0;
+    std::vector<TravelNode> recordNodes;
+    std::vector<TravelNodeLink> recordNodeLinks;
+    std::vector<TravelNodePath> recordNodePaths;
+    uint32 currentPathNodeIndex = 0;
 };
 
 enum TravelNodePathType {
@@ -112,7 +188,8 @@ enum TravelNodePathType {
     PATH_TYPE_TRANSPORT,
     PATH_TYPE_FLIGHTPATH,
     PATH_TYPE_TELEPORTSPELL,
-    PATH_TYPE_STATICPORTAL
+    PATH_TYPE_STATICPORTAL,
+    PATH_TYPE_MAX
 };
 
 class PlayerBotMgr
@@ -156,9 +233,44 @@ class PlayerBotMgr
         PlayerBotStats& GetStats(){ return m_stats; }
         void Start() { m_confEnableRandomBots = true; }
 
+        // В объявлении класса PlayerBotMgr (ai generated shit, need to make it myself...)
+        std::vector<WorldBotConfig::TravelNode> FindAStarPath(uint8 faction, uint32 startMapId, Position posStart, uint32 endMapId, Position posEnd);
+        float CalculateHeuristic(const WorldBotConfig::TravelNode& from, const WorldBotConfig::TravelNode& to);
+        // my proper development!
+        std::vector<WorldBotConfig::TravelNode> FindGreedyPath(uint8 faction, uint32 startMapId, Position posStart, uint32 endMapId, Position posEnd);
+        WorldBotConfig::TravelNode GetTravelNode(uint32 id) const;
+        std::vector<WorldBotConfig::TravelNode> GetTravelNodesFilterByRegex(std::string regex);
+        std::vector<WorldBotConfig::TravelNodeLink> GetTravelNodeLinksById(uint32 id) const;
+        WorldBotConfig::TravelNodeLink GetTravelNodeLink(uint32 node_id, uint32 to_node_id);
+        std::vector<WorldBotConfig::TravelNodePath> GetTravelNodePathVector(uint32 mapId, uint32 node_id, uint32 to_node_id) const;
+        std::vector<WorldBotConfig::TravelNodePath> GetRecordNodePathVector(uint32 mapId, uint32 node_id, uint32 to_node_id) const;
+        WorldBotConfig::TaxiFlightNodeInfo GetTaxiFlightNodeInfoById(uint32 id) const;
         inline float GetWorldBotGearQuality() { return m_worldBotConfig.gearQuality; }
         std::unordered_map<std::string /* spec name */, std::vector<std::pair<uint32, uint32>> /* talent sequence */> GetSpecsFilterByRegex(std::string regex);
         std::vector<std::pair<uint32, uint32>> GetSpecByName(std::string properName);
+        void SpawnWorldBots(uint8 lvlMin, uint8 lvlMax, std::vector<uint8> allowesRaces, std::vector<uint8> allowedClasses, std::string location, uint32 count);
+
+        WorldBotConfig* GetWorldBotConfig() { return &m_worldBotConfig; }
+        uint32 GetRecordNodeIndex(uint32 id){
+            uint32 index = UINT32_MAX;
+            for (uint32 i=0; i < m_worldBotConfig.recordNodes.size(); ++i){
+                if (m_worldBotConfig.recordNodes[i].id == id){
+                    index = i;
+                    break;
+                }
+            }
+            return index;
+        }
+        bool DoesLinkExist(uint32 node_id, uint32 to_node_id){
+            bool result = false;
+            for (auto link: m_worldBotConfig.recordNodeLinks){
+                if (link.node_id == node_id && link.to_node_id == to_node_id){
+                    result = true;
+                    break;
+                }
+            }
+            return result;
+        }
 
     protected:
         // How long since last update?
@@ -184,7 +296,6 @@ class PlayerBotMgr
 
         WorldBotConfig m_worldBotConfig;
         std::unordered_map<std::string, std::vector<std::pair<uint32, uint32>>> m_worldBotDefaultTalentSpecs;
-        // подумать над форматом хранимых данных travelnode из бд...
 };
 
 #define sPlayerBotMgr MaNGOS::Singleton<PlayerBotMgr>::Instance()

@@ -329,6 +329,24 @@ void PlayerBotMgr::Load()
         } while (result->NextRow());
     }
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %d worldbot travelnode paths.", m_worldBotConfig.travelNodePath.size());
+
+    // taxi flight info
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> [PlayerBotMgr] Loading worldbot taxi info...");
+    result.reset();
+    result = WorldDatabase.PQuery("SELECT id, mount_creature_id1, mount_creature_id2 FROM taxi_nodes;");
+    if (!result)
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Table `taxi_nodes` is empty.");
+    else {
+        do {
+            fields = result->Fetch();
+            WorldBotConfig::TaxiFlightNodeInfo info;
+            info.id = fields[0].GetUInt32();
+            info.mount_creature_id1 = fields[1].GetUInt32();
+            info.mount_creature_id2 = fields[2].GetUInt32();
+            m_worldBotConfig.taxiNodesInfo.push_back(info);
+        }while (result->NextRow());
+    }
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %d worldbot taxi info entries.", m_worldBotConfig.taxiNodesInfo.size());
 }
 
 void PlayerBotMgr::DeleteAll()
@@ -2225,6 +2243,371 @@ bool ChatHandler::HandleBattleBotShowAllPathsCommand(char* args)
     return true;
 }
 
+std::vector<WorldBotConfig::TravelNode> PlayerBotMgr::FindAStarPath(uint8 faction, uint32 startMapId, Position posStart, uint32 endMapId, Position posEnd){
+    std::vector<WorldBotConfig::TravelNode> result;
+    
+    if (startMapId != endMapId){
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindAStarPath : start and end maps are different.");
+        return result;
+    }
+    
+    // Собираем все узлы на целевой карте
+    std::vector<WorldBotConfig::TravelNode> mapNodes;
+    for (auto node : m_worldBotConfig.travelNode){
+        std::regex pattern;
+        if (faction == HORDE)
+            pattern = "alliance";
+        else if (faction == ALLIANCE)
+            pattern = "horde";
+
+        if (std::regex_search(node.name, pattern))
+            continue;
+
+        if (node.map_id == endMapId)
+            mapNodes.push_back(node);
+    }
+    
+    if (mapNodes.empty()){
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindAStarPath : no nodes found on target map.");
+        return result;
+    }
+    
+    // Находим ближайший стартовый и целевой узлы
+    float minDistStart = std::numeric_limits<float>::max();
+    float minDistEnd = std::numeric_limits<float>::max();
+    WorldBotConfig::TravelNode startNode;
+    WorldBotConfig::TravelNode goalNode;
+    
+    for (auto node : mapNodes){
+        Vector3 startVec(Vector3({node.x, node.y, node.z}) - Vector3({posStart.x, posStart.y, posStart.z}));
+        Vector3 endVec(Vector3({node.x, node.y, node.z}) - Vector3({posEnd.x, posEnd.y, posEnd.z}));
+        
+        float lengthToStart = startVec.length();
+        if (lengthToStart < minDistStart){
+            minDistStart = lengthToStart;
+            startNode = node;
+        }
+        
+        float lengthToEnd = endVec.length();
+        if (lengthToEnd < minDistEnd){
+            minDistEnd = lengthToEnd;
+            goalNode = node;
+        }
+    }
+    
+    if (!startNode.linked || !goalNode.linked){
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindAStarPath : start or goal node has no links.");
+        return result;
+    }
+    
+    // A* алгоритм
+    struct AStarNode {
+        WorldBotConfig::TravelNode node;
+        float g; // стоимость от старта до текущего узла
+        float h; // эвристика (расстояние до цели)
+        float f; // g + h
+        uint32 parentId;
+        
+        AStarNode(WorldBotConfig::TravelNode n, float gCost, float hCost, uint32 pId) 
+            : node(n), g(gCost), h(hCost), f(gCost + hCost), parentId(pId) {}
+        
+        bool operator>(const AStarNode& other) const {
+            return f > other.f;
+        }
+    };
+    
+    std::unordered_map<uint32, float> gScore; // стоимость от старта до узла
+    std::unordered_map<uint32, uint32> cameFrom; // предыдущий узел в оптимальном пути
+    std::unordered_map<uint32, bool> closedSet; // уже обработанные узлы
+    
+    // Приоритетная очередь (минимальная куча)
+    std::priority_queue<AStarNode, std::vector<AStarNode>, std::greater<AStarNode>> openSet;
+    
+    // Инициализация
+    gScore[startNode.id] = 0.0f;
+    float startH = CalculateHeuristic(startNode, goalNode);
+    openSet.push(AStarNode(startNode, 0.0f, startH, 0));
+    
+    while (!openSet.empty()){
+        AStarNode current = openSet.top();
+        openSet.pop();
+        
+        // Проверяем, не обработали ли мы этот узел уже с лучшей стоимостью
+        if (closedSet[current.node.id])
+            continue;
+            
+        closedSet[current.node.id] = true;
+        
+        // Достигли цели?
+        if (current.node.id == goalNode.id){
+            // Восстанавливаем путь
+            std::vector<WorldBotConfig::TravelNode> path;
+            uint32 currentNodeId = goalNode.id;
+            while (currentNodeId != 0){
+                // path.push_back(m_worldBotConfig.travelNode[currentNodeId]);
+                path.push_back(GetTravelNode(currentNodeId));
+                currentNodeId = cameFrom[currentNodeId];
+            }
+            std::reverse(path.begin(), path.end());
+            result = path;
+            break;
+        }
+        
+        // Получаем соседей
+        std::vector<WorldBotConfig::TravelNodeLink> neighbours = GetTravelNodeLinksById(current.node.id);
+        
+        for (auto& nodeLink : neighbours){
+            if (closedSet[nodeLink.to_node_id])
+                continue;
+                
+            // WorldBotConfig::TravelNode neighborNode = m_worldBotConfig.travelNode[nodeLink.to_node_id];
+            WorldBotConfig::TravelNode neighborNode = GetTravelNode(nodeLink.to_node_id);
+            float tentativeG = current.g + nodeLink.distance;
+            
+            // Если нашли лучший путь к соседу
+            if (!gScore.count(neighborNode.id) || tentativeG < gScore[neighborNode.id]){
+                cameFrom[neighborNode.id] = current.node.id;
+                gScore[neighborNode.id] = tentativeG;
+                float heuristic = CalculateHeuristic(neighborNode, goalNode);
+                openSet.push(AStarNode(neighborNode, tentativeG, heuristic, current.node.id));
+            }
+        }
+    }
+    
+    if (result.empty()){
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindAStarPath : failed to find path from node %d to node %d.", startNode.id, goalNode.id);
+    }
+    
+    return result;
+}
+
+std::vector<WorldBotConfig::TravelNode> PlayerBotMgr::FindGreedyPath(uint8 faction, uint32 startMapId, Position posStart, uint32 endMapId, Position posEnd){
+    std::vector<WorldBotConfig::TravelNode> result;
+    if (startMapId == endMapId){
+        std::vector<WorldBotConfig::TravelNode> mapNodes;
+        for (auto node: m_worldBotConfig.travelNode){
+            if (node.map_id == endMapId)
+                mapNodes.push_back(node);
+        }
+
+        float minDistStart = 1000000.0f;
+        float minDistEnd = 1000000.0f;
+        WorldBotConfig::TravelNode currentNode;
+        WorldBotConfig::TravelNode targetNode;
+        for (auto node: mapNodes){
+            Vector3 startVec({node.x - posStart.x, node.y - posStart.y, node.z - posStart.z});
+            Vector3 endVec({node.x - posEnd.x, node.y - posEnd.y, node.z - posEnd.z});
+            float length = startVec.length();
+            if (length < minDistStart){
+                minDistStart = length;
+                currentNode = node;
+            }
+            length = endVec.length();
+            if (length < minDistEnd){
+                minDistEnd = length;
+                targetNode = node;
+            }
+        }
+
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindGreedyPath : minDistStart = %f, minDistEnd = %f.", minDistStart, minDistEnd);
+
+        if (!currentNode.linked || !targetNode.linked){
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindGreedyPath : can't find any closest start node or closest to posEnd target node.");
+            result.clear();
+            return result;
+        }
+
+        result.push_back(currentNode);
+        std::vector<uint32> closedNodes {currentNode.id};
+
+        float straightDistance = Vector3({currentNode.x - targetNode.x, currentNode.y - targetNode.y, currentNode.z - targetNode.z}).length();
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WB]::___ Straight distance from #%d to #%d = %f.", currentNode.id, targetNode.id, straightDistance);
+        if (straightDistance > 500.0f){
+            std::vector<WorldBotConfig::TravelNode> allFlightMasters;
+            std::regex pattern;
+            if (faction == ALLIANCE){
+                pattern = "flightMaster alliance";
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ Selected alliance flightmasters");
+            }
+            else if (faction == HORDE){
+                pattern = "flightMaster horde";
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ Selected horde flightmasters.");
+            }
+            else
+                pattern = "flightMaster";
+            for (auto node: m_worldBotConfig.travelNode){
+                if (std::regex_search(node.name, pattern))
+                    allFlightMasters.push_back(node);
+            }
+
+            WorldBotConfig::TravelNode closestFlightMasterNode;
+            if (!allFlightMasters.empty()){
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WB]::FLIGHTMASTERS ARRAY IS FOUND!");
+                float minDistToFlightMaster = 400.0f;
+                for (auto node: allFlightMasters){
+                    float distToFlightMaster = Vector3({node.x-currentNode.x, node.y-currentNode.y, node.z-currentNode.z}).length();
+                    if (distToFlightMaster < minDistToFlightMaster){
+                        minDistToFlightMaster = distToFlightMaster;
+                        closestFlightMasterNode = node;
+                    }
+                }
+            }
+            else
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WB]::FLIGHTMASTER IS NOT FOUND.");
+
+            if (closestFlightMasterNode.linked){
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WB]::FLIGHTMASTER -- Selected flightmaster node #%d; name \"%s\".", closestFlightMasterNode.id, closestFlightMasterNode.name.c_str());
+            }
+        }
+
+        while (currentNode != targetNode){
+            std::vector<WorldBotConfig::TravelNodeLink> travelLinks = GetTravelNodeLinksById(currentNode.id);
+            std::vector<WorldBotConfig::TravelNodeLink> neighbours;
+
+            for (auto nodeLink: travelLinks){
+                bool skip = false;
+                for (auto id: closedNodes){
+                    if (id == nodeLink.to_node_id){
+                        skip = true;
+                        break;
+                    }
+                }
+                if (skip || nodeLink.type == PATH_TYPE_TRANSPORT)
+                    continue;
+                
+                neighbours.push_back(nodeLink);
+            }
+
+            if (neighbours.empty()){
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindGreedyPath : current node #%d is leaf (has no links), but targetNode is not reached.", currentNode.id);
+                // result.clear();
+                // return result;
+                if (!result.empty()){
+                    result.pop_back();
+                    currentNode = result.back();
+                    continue;
+                }
+                else{
+                    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::FindGreedyPath : nothing to pop from `result` vector. No path found.");
+                    return result;
+                }
+            }
+
+            float distance = 1000000.0f;
+            // WorldBotConfig::TravelNode nextNode;
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "For node #%d:\t", currentNode.id);
+            for (auto nodeLink: neighbours){
+                // skip nodes that are already checked
+                // bool skip = false;
+                // for (auto node: closedNodes)
+                //     if (nodeLink.to_node_id == node){
+                //         skip = true;
+                //         break;
+                //     }
+                // if (skip)
+                //     continue;
+
+                WorldBotConfig::TravelNode node = m_worldBotConfig.travelNode[nodeLink.to_node_id];
+                // used for heuristic function h(x)
+                float length = Vector3({targetNode.x - node.x, targetNode.y - node.y, targetNode.z - node.z}).length();
+                if (nodeLink.distance + length < distance){
+                    distance = nodeLink.distance + length;
+                    currentNode = node;
+                }
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "handling neighbour #%d", node.id);
+            }
+            closedNodes.push_back(currentNode.id);
+            result.push_back(currentNode);
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "\n\tselected node #%d; name \"%s\".", currentNode.id, currentNode.name.c_str());
+        }
+    }
+
+    return result;
+}
+
+// Вспомогательный метод для эвристики
+float PlayerBotMgr::CalculateHeuristic(const WorldBotConfig::TravelNode& from, const WorldBotConfig::TravelNode& to){
+    Vector3 fromVec(from.x, from.y, from.z);
+    Vector3 toVec(to.x, to.y, to.z);
+    return (toVec - fromVec).length();
+}
+
+std::vector<WorldBotConfig::TravelNodeLink> PlayerBotMgr::GetTravelNodeLinksById(uint32 id) const {
+    std::vector<WorldBotConfig::TravelNodeLink> result;
+    for (auto nodeLink: m_worldBotConfig.travelNodeLink){
+        if (nodeLink.node_id == id)
+            result.push_back(nodeLink);
+    }
+
+    return result;
+}
+
+WorldBotConfig::TravelNodeLink PlayerBotMgr::GetTravelNodeLink(uint32 node_id, uint32 to_node_id){
+    WorldBotConfig::TravelNodeLink result;
+    for (auto entry: m_worldBotConfig.travelNodeLink){
+        if (entry.node_id == node_id && entry.to_node_id == to_node_id)
+            result = entry;
+    }
+    return result;
+}
+
+std::vector<WorldBotConfig::TravelNodePath> PlayerBotMgr::GetTravelNodePathVector(uint32 mapId, uint32 node_id, uint32 to_node_id) const {
+    std::vector<WorldBotConfig::TravelNodePath> result;
+    for (auto entry: m_worldBotConfig.travelNodePath){
+        if (mapId == entry.map_id && node_id == entry.node_id && to_node_id == entry.to_node_id){
+            result.push_back(entry);
+            // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "____ added travel node path entry with mapId #%d, nodeId #%d, to_node_id #%d.", entry.map_id, entry.node_id, entry.to_node_id);
+        }
+    }
+
+    std::sort(result.begin(), result.end(), [](const WorldBotConfig::TravelNodePath& a, const WorldBotConfig::TravelNodePath& b){
+        return a.nr < b.nr;
+    });
+
+    return result;
+}
+
+std::vector<WorldBotConfig::TravelNodePath> PlayerBotMgr::GetRecordNodePathVector(uint32 mapId, uint32 node_id, uint32 to_node_id) const{
+    std::vector<WorldBotConfig::TravelNodePath> result;
+    for (auto entry: m_worldBotConfig.recordNodePaths){
+        if (mapId == entry.map_id && node_id == entry.node_id && to_node_id == entry.to_node_id){
+            result.push_back(entry);
+            // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "____ added travel node path entry with mapId #%d, nodeId #%d, to_node_id #%d.", entry.map_id, entry.node_id, entry.to_node_id);
+        }
+    }
+
+    std::sort(result.begin(), result.end(), [](const WorldBotConfig::TravelNodePath& a, const WorldBotConfig::TravelNodePath& b){
+        return a.nr < b.nr;
+    });
+
+    return result;
+}
+
+WorldBotConfig::TaxiFlightNodeInfo PlayerBotMgr::GetTaxiFlightNodeInfoById(uint32 id) const {
+    WorldBotConfig::TaxiFlightNodeInfo result;
+    for (auto entry: m_worldBotConfig.taxiNodesInfo){
+        if (entry.id == id){
+            result = entry;
+        }
+    }
+    return result;
+}
+
+std::vector<WorldBotConfig::TravelNode> PlayerBotMgr::GetTravelNodesFilterByRegex(std::string regex){
+    std::vector<WorldBotConfig::TravelNode> result;
+    for (auto node: m_worldBotConfig.travelNode){
+        std::regex pattern {regex};
+        if (std::regex_search(node.name, pattern)){
+            result.push_back(node);
+        }
+    }
+    return result;
+}
+
+void PlayerBotMgr::SpawnWorldBots(uint8 lvlMin, uint8 lvlMax, std::vector<uint8> allowedRaces, std::vector<uint8> allowedClasses, std::string location, uint32 count){
+    
+}
+
 bool ChatHandler::HandleWorldBotAddCommand(char * args){
     Player* pPlayer = m_session->GetPlayer();
     if (!pPlayer)
@@ -2259,6 +2642,195 @@ bool ChatHandler::HandleWorldBotAddCommand(char * args){
         SetSentErrorMessage(true);
         return false;
     }
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ GetInstanceId() = %d", pPlayer->GetMap()->GetInstanceId());
+    return true;
+}
+
+bool ChatHandler::HandleWorldBotFindPathCommand(char * args){
+    Player* pPlayer = GetSession()->GetPlayer();
+    if (!pPlayer){
+        return false;
+    }
+
+    Player* pTarget = GetSelectedPlayer();
+    if (!pTarget){
+        SendSysMessage(LANG_NO_CHAR_SELECTED);
+        SetSentErrorMessage(true);
+        return false;
+    }
+    
+    if (!pTarget->AI()){
+        SendSysMessage("Selected target has no AI.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    WorldBotAI* pAI = dynamic_cast<WorldBotAI*>(pTarget->AI());
+    if (!pAI){
+        SendSysMessage("Selected target is not a world bot.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    
+    // uint32 taxiPathId = 47;
+    // uint32 displayId = 0;
+    // uint32 creatureId = 0;
+    // WorldBotConfig::TaxiFlightNodeInfo taxiInfo = sPlayerBotMgr.GetTaxiFlightNodeInfoById(taxiPathId);
+    // if (taxiInfo.id){
+    //     if (taxiInfo.mount_creature_id1)
+    //         creatureId = taxiInfo.mount_creature_id1;
+    //     else if (taxiInfo.mount_creature_id2)
+    //         creatureId = taxiInfo.mount_creature_id2;
+    // }
+    // for (auto itr = sObjectMgr.GetCreatureInfoMap().begin(); itr != sObjectMgr.GetCreatureInfoMap().end(); ++itr){
+    //     if (creatureId == itr->first){
+    //         displayId = itr->second->display_id[0];
+    //         break;
+    //     }
+    // }
+    // if (displayId)
+    //     pTarget->Mount(displayId);
+    // pTarget->GetMotionMaster()->MoveTaxiFlight(taxiPathId, 0);
+
+    // pAI->SetLeader(pPlayer);
+
+    // std::vector<WorldBotConfig::TravelNodePath> travelPath = sPlayerBotMgr.GetTravelNodePathVector(pPlayer->GetMapId(), 1068, 491);
+    // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PBM]::FindPath : travel path size = %d.", travelPath.size());
+
+    std::vector<WorldBotConfig::TravelNode> travel;
+    travel = sPlayerBotMgr.FindAStarPath(pTarget->GetFactionId(), pTarget->GetMapId(), pTarget->GetPosition(), pPlayer->GetMapId(), pPlayer->GetPosition());
+    if (!travel.size()){
+        SendSysMessage("Path is not found.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+    pAI->SetTravelJourney(travel, pPlayer->GetPosition());
+    
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::HandleWorldBotFindPath : found path:");
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Start here %d -> ", travel[0].id);
+    for (int i=1; i < travel.size(); ++i)
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, " -> %d; name \"%s\"", travel[i].id, travel[i].name.c_str());
+    
+    return true;
+}
+
+bool ChatHandler::HandleWorldBotCastEnchantCommand(char * args){
+    Player* pTarget = GetSelectedPlayer();
+    if (!pTarget){
+        SendSysMessage(LANG_NO_CHAR_SELECTED);
+        SetSentErrorMessage(true);
+        return false;
+    }
+    
+    if (!pTarget->AI()){
+        SendSysMessage("Selected target has no AI.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    WorldBotAI* pAI = dynamic_cast<WorldBotAI*>(pTarget->AI());
+    if (!pAI){
+        SendSysMessage("Selected target is not a world bot.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    if (pAI->GetCraftProfessionId() != SKILL_ENCHANTING){
+        SendSysMessage("Selected bot doesn't know enchanting.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    uint32 spellId = 0;
+    ExtractUInt32(&args, spellId);
+    if (spellId){
+        pAI->CastEnchantSpell(spellId);
+        return true;
+    }
+    else {
+        SendSysMessage("No profession spell id specified.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    return true;
+}
+
+bool ChatHandler::HandleWorldBotProfInfoCommand(char * args){
+    Player* pPlayer = GetSession()->GetPlayer();
+    if (!pPlayer)
+        return false;
+
+    uint32 lang = 0;
+    if (pPlayer->GetTeam() == ALLIANCE)
+        lang = LANG_COMMON;
+    else if (pPlayer->GetTeam() == HORDE)
+        lang = LANG_ORCISH;
+
+    Player* pTarget = GetSelectedPlayer();
+    if (!pTarget){
+        SendSysMessage(LANG_NO_CHAR_SELECTED);
+        SetSentErrorMessage(true);
+        return false;
+    }
+    
+    if (!pTarget->AI()){
+        SendSysMessage("Selected target has no AI.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    WorldBotAI* pAI = dynamic_cast<WorldBotAI*>(pTarget->AI());
+    if (!pAI){
+        SendSysMessage("Selected target is not a world bot.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    const char* filterName = ExtractArg(&args);
+    if (filterName){
+        std::string pattern {filterName};
+        std::vector<const SpellEntry*> spellVec = pAI->GetProffessionSpellsFilterByRegex(pattern);
+        if (spellVec.empty()){
+            std::string msg = "No matches found with filter word \"" + pattern + "\".";
+            pTarget->MonsterWhisper(msg.c_str(), pPlayer);
+            return true;
+        }
+        std::string msg = "Found matches for word \"" + pattern + "\":";
+        auto data = std::make_unique<WorldPackets::Chat::ChatMessage>();
+        data->message = msg;
+        data->lang = lang;
+        data->whisperTargetOrChannel = pPlayer->GetName();
+        data->type = CHAT_MSG_WHISPER;
+        pTarget->GetSession()->QueuePacket(std::move(data));
+        // pTarget->MonsterWhisper(msg.c_str(), GetSession()->GetPlayer());
+        msg.clear();
+        int32 i = 1;
+        for (auto spell: spellVec){
+            if (i % 7 == 0){
+                data = std::make_unique<WorldPackets::Chat::ChatMessage>();
+                data->message = msg;
+                data->lang = lang;
+                data->whisperTargetOrChannel = pPlayer->GetName();
+                data->type = CHAT_MSG_WHISPER;
+                pTarget->GetSession()->QueuePacket(std::move(data));
+                msg.clear();
+                i = 1;
+            }
+            msg.append("[" + (spell->SpellName[0]) + "]" + " - " + std::to_string(spell->Id) + "; ");
+            i++;
+        }
+        if (!msg.empty()){
+            data = std::make_unique<WorldPackets::Chat::ChatMessage>();
+            data->message = msg;
+            data->lang = lang;
+            data->whisperTargetOrChannel = pPlayer->GetName();
+            data->type = CHAT_MSG_WHISPER;
+            pTarget->GetSession()->QueuePacket(std::move(data));
+        }
+        // pTarget->MonsterWhisper(msg.c_str(), GetSession()->GetPlayer());
+    }
 
     return true;
 }
@@ -2290,18 +2862,711 @@ bool ChatHandler::HandleWorldBotRemoveCommand(char * args){
 }
 
 bool ChatHandler::HandleWorldBotRecordPointCommand(char * args){
+    WorldBotConfig* config = sPlayerBotMgr.GetWorldBotConfig();
+    if (!config)
+        return false;
     Player* pPlayer = m_session->GetPlayer();
     if (!pPlayer)
         return false;
-    
-    std::ofstream file("waypoints.txt", std::ios::app);
-    if (!file.is_open()){
-        SendSysMessage("Failed to open file.");
+
+    const char* type = ExtractArg(&args);
+    if (!type){
+        SendSysMessage("No command type specified. Abort.");
         SetSentErrorMessage(true);
         return false;
     }
-    file << pPlayer->GetPositionX() << " " << pPlayer->GetPositionY() << " " << pPlayer->GetPositionZ() << std::endl;
-    file.close();
+    std::string str {type};
+    if (str == "init"){
+        uint32 id = 0;
+        if (!ExtractUInt32(&args, id)){
+            SendSysMessage("Failed to extract init node id. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        const char* nameChar = ExtractArg(&args);
+        std::string name;
+        if (nameChar){
+            name = nameChar;
+        }
+        
+        config->previousNodeId = id;
+        WorldBotConfig::TravelNode node {config->previousNodeId, name.c_str(), pPlayer->GetMapId(), pPlayer->GetPositionX(), 
+            pPlayer->GetPositionY(), pPlayer->GetPositionZ(), true};
+        config->recordNodes.push_back(node);
+        config->currentNodeId = id + 1;
+        std::string msg = "Set init point:\n (" + std::to_string(node.id) + ", " + name + ", " + std::to_string(node.map_id) +
+            ", " + std::to_string(node.x) + ", " + std::to_string(node.y) + ", " + std::to_string(node.z) + ", " + std::to_string(node.linked)
+            + ")";
+        std::fstream file("waypoints.txt", std::ios_base::app);
+        if (file.is_open()){
+            file << msg << std::endl;
+        }
+        file.close();
+        SendSysMessage(msg.c_str());
+        return true;
+    }
+    else if (str == "setpreviosnode"){
+        uint32 id = 0;
+        if (!ExtractUInt32(&args, id)){
+            SendSysMessage("Failed to extract previous node id. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        
+        uint32 index = sPlayerBotMgr.GetRecordNodeIndex(id);
+        if (index == UINT32_MAX){
+            SendSysMessage("No nodes found for provided id. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        WorldBotConfig::TravelNode travelNode = config->recordNodes[index];
+        config->previousNodeId = travelNode.id;
+        pPlayer->TeleportTo(travelNode.map_id, travelNode.x, travelNode.y, travelNode.z, 0.0f);
+        std::string msg = "Node [#" + std::to_string(travelNode.id) + ", name \"" + travelNode.name + "\"]" + " has been set as previous.";
+        std::fstream file("waypoints.txt", std::ios_base::app);
+        if (file.is_open()){
+            file << msg << std::endl;
+            file.close();
+        }
+        SendSysMessage(msg.c_str());
+    }
+    else if (str == "addnode"){
+        const char* nameChar = ExtractArg(&args);
+        std::string name;
+        if (nameChar)
+            name = nameChar;
+        uint32 index = sPlayerBotMgr.GetRecordNodeIndex(config->previousNodeId);
+        if (index == UINT32_MAX){
+            SendSysMessage("No nodes found for provided id. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        WorldBotConfig::TravelNode prevNode = config->recordNodes[index];
+        if (prevNode.id == 0){
+            SendSysMessage("No previous node found. Run \'init\' subcommand first. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        WorldBotConfig::TravelNode node {config->currentNodeId, name.c_str(), pPlayer->GetMapId(), pPlayer->GetPositionX(), 
+            pPlayer->GetPositionY(), pPlayer->GetPositionZ(), false};
+        
+        int32 isBidirectional = -1;
+        ExtractInt32(&args, isBidirectional);
+        if (isBidirectional !=0 && isBidirectional != 1){
+            SendSysMessage("No link directions specified. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        uint32 pathType = 0;
+        ExtractUInt32(&args, pathType);
+        if (!pathType){
+            SendSysMessage("No path type specified. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        uint32 objectId = 0;
+        ExtractUInt32(&args, objectId);
+        float straightDistance = Vector3(node.x-prevNode.x, node.y-prevNode.y, node.z-prevNode.z).length();
+        if (straightDistance > 100.0f){
+            SendSysMessage("Error: straight distance between these nodes is greater than 100 yards. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        PathFinder pathFinder(pPlayer);
+        pathFinder.calculate(Vector3(prevNode.x, prevNode.y, prevNode.z), Vector3(node.x, node.y, node.z));
+        float distance = pathFinder.Length();
+        WorldBotConfig::TravelNodeLink linkToCurrent {prevNode.id, node.id, static_cast<uint8>(pathType), objectId, distance, 0.0f, 0.0f, 0, 0, 0, 0};
+        WorldBotConfig::TravelNodeLink linkFromCurrent {node.id, prevNode.id, static_cast<uint8>(pathType), objectId, distance, 0.0f, 0.0f, 0, 0, 0, 0};
+        config->recordNodeLinks.push_back(linkToCurrent);
+        if (isBidirectional){
+            config->recordNodeLinks.push_back(linkFromCurrent);
+            prevNode.linked = true;
+        }
+        node.linked = true;
+        config->recordNodes.push_back(node);
+        config->previousNodeId = config->currentNodeId;
+        config->currentNodeId++;
+
+        std::string msg = "Add node (" + std::to_string(node.id) + ", " + node.name + ", " + std::to_string(node.map_id) +
+            ", " + std::to_string(node.x) + ", " + std::to_string(node.y) + ", " + std::to_string(node.z) + ", " + 
+            std::to_string(node.linked) + ") linked to #" + std::to_string(prevNode.id) + ".";
+
+        std::fstream file("waypoints.txt", std::ios_base::app);
+        if (file.is_open()){
+            file << msg << std::endl;
+            file.close();
+        }
+        SendSysMessage(msg.c_str());
+    }
+    else if (str == "addpathnode"){
+        uint32 firstId = 0;
+        ExtractUInt32(&args, firstId);
+        if (!firstId){
+            SendSysMessage("Failed to extract first node id. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        uint32 secondId = 0;
+        ExtractUInt32(&args, secondId);
+        if (!secondId){
+            SendSysMessage("Failed to extract second node id. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+
+        WorldBotConfig::TravelNodePath path {firstId, secondId, config->currentPathNodeIndex, pPlayer->GetMapId(), pPlayer->GetPositionX(), pPlayer->GetPositionY(),
+            pPlayer->GetPositionZ()};
+
+        config->recordNodePaths.push_back(path);
+        config->currentPathNodeIndex++;
+        std::string msg = "Add path node (" + std::to_string(path.node_id) + ", " + std::to_string(path.to_node_id) + ", " + 
+            std::to_string(path.nr) + ").";
+        SendSysMessage(msg.c_str());
+    }
+    else if (str == "savepath"){
+        uint32 node_id = 0, to_node_id = 0;
+        ExtractUInt32(&args, node_id);
+        if (!node_id){
+            SendSysMessage("Failed to extract first node id. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        ExtractUInt32(&args, to_node_id);
+        if (!to_node_id){
+            SendSysMessage("Failed to extract second node id. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+
+        config->currentPathNodeIndex = 0;
+        float distance = 0.0f;
+        std::vector<WorldBotConfig::TravelNodePath> path = sPlayerBotMgr.GetRecordNodePathVector(pPlayer->GetMapId(), node_id, to_node_id);
+        if (path.empty()){
+            SendSysMessage("Can't find any path for provided nodes. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        for (int i=1; i < path.size(); ++i){
+            float dx = path[i-1].x - path[i].x;
+            float dy = path[i-1].y - path[i].y;
+            float dz = path[i-1].z - path[i].z;
+            distance += sqrtf(dx*dx + dy*dy + dz*dz);
+        }
+        std::reverse(path.begin(), path.end());
+        for (auto& entry: path){
+            uint32 tmp = entry.node_id;
+            entry.node_id = entry.to_node_id;
+            entry.to_node_id = tmp;
+            entry.nr = path.size() - 1 - entry.nr;
+            config->recordNodePaths.push_back(entry);
+        }
+        WorldBotConfig::TravelNodeLink link {node_id, to_node_id, PATH_TYPE_WALK, 0, distance, 0.0f, 0.0f, 0, 0, 0, 0};
+        WorldBotConfig::TravelNodeLink link2 {to_node_id, node_id, PATH_TYPE_WALK, 0, distance, 0.0f, 0.0f, 0, 0, 0, 0};
+        config->recordNodeLinks.push_back(link);
+        config->recordNodeLinks.push_back(link2);
+    }
+    else if (str == "linknodes"){
+        uint32 node1 = 0;
+        uint32 node2 = 0;
+        
+        if (!ExtractUInt32(&args, node1)){
+            SendSysMessage("Failed to extract first node id. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        uint32 index1 = sPlayerBotMgr.GetRecordNodeIndex(node1);
+        if (index1 == UINT_MAX){
+            std::string msg = "No nodes found in recordNodes vector for node1 = #" + std::to_string(node1) + ". Abort.";
+            SendSysMessage(msg.c_str());
+            SetSentErrorMessage(true);
+            return false;
+        }
+
+        if (!ExtractUInt32(&args, node2)){
+            SendSysMessage("Failed to extract second node id. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        uint32 index2 = sPlayerBotMgr.GetRecordNodeIndex(node2);
+        if (index2 == UINT_MAX){
+            std::string msg = "No nodes found in recordNodes vector for node2 = #" + std::to_string(node1) + ". Abort.";
+            SendSysMessage(msg.c_str());
+            SetSentErrorMessage(true);
+            return false;
+        }
+
+        uint32 isBidirectional = 0;
+        if (!ExtractUInt32(&args, isBidirectional)){
+            SendSysMessage("Failed to extract bidirectional flag. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        if (isBidirectional != 0 && isBidirectional != 1){
+            SendSysMessage("Wrong \'isBidirectional\' argument. Should be 0 or 1. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+
+        uint32 pathType = PATH_TYPE_NONE;
+        if (!ExtractUInt32(&args, pathType)){
+            SendSysMessage("Failed to extract travel type. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+
+        uint32 object = 0;
+        ExtractUInt32(&args, object);
+
+        WorldBotConfig::TravelNode travelNode1 = config->recordNodes[index1];
+        WorldBotConfig::TravelNode travelNode2 = config->recordNodes[index2];
+        float straightDistance = Vector3(travelNode1.x-travelNode2.x, travelNode1.y-travelNode2.y, travelNode1.z-travelNode2.z).length();
+        if (straightDistance > 100.0f){
+            SendSysMessage("Straight distance between these nodes is greater that 100 yards. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+
+        PathFinder pathFinder(pPlayer);
+        pathFinder.calculate(Vector3(travelNode1.x, travelNode1.y, travelNode1.z), Vector3(travelNode2.x, travelNode2.y, travelNode2.z));
+        float distance = pathFinder.Length();
+        WorldBotConfig::TravelNodeLink link1 {node1, node2, static_cast<uint8>(pathType), object, distance, 0.0f, 0.0f, 0, 0, 0, 0};
+        config->recordNodeLinks.push_back(link1);
+        config->recordNodes[index1].linked = true;
+        if (isBidirectional){
+            WorldBotConfig::TravelNodeLink link2 {node2, node1, static_cast<uint8>(pathType), object, distance, 0.0f, 0.0f, 0, 0, 0, 0};
+            config->recordNodeLinks.push_back(link2);
+            config->recordNodes[index2].linked = true;
+        }
+
+        std::string msg = "Link has been set from #" + std::to_string(node1) + " to #" + std::to_string(node2);
+        if (isBidirectional)
+            msg.append(" and vice versa");
+        msg.append(".");
+        std::fstream file("waypoints.txt", std::ios_base::app);
+        if (file.is_open()){
+            file << msg << std::endl;
+            file.close();
+        }
+        SendSysMessage(msg.c_str());
+    }
+    else if (str == "linknodeswithindist"){
+        float boundDist = 20.0f;
+        ExtractFloat(&args, boundDist);
+        if (boundDist > 20.0f)
+            boundDist = 20.0f;
+        std::string msg = "Using bound distance = " + std::to_string(boundDist) + ".";
+        SendSysMessage(msg.c_str());
+        std::fstream file {"createdlinks.txt", std::ios::out | std::ios::trunc};
+        for (uint32 i=0; i < config->recordNodes.size(); ++i){
+            WorldBotConfig::TravelNode node = config->recordNodes[i];
+            for (uint32 j=0; j < config->recordNodes.size(); ++j){
+                if (j == i)
+                    continue;
+
+                WorldBotConfig::TravelNode neighbour = config->recordNodes[j];
+                
+                if (sPlayerBotMgr.DoesLinkExist(node.id, neighbour.id))
+                    continue;
+
+                // TODO: make this stupid working...
+                float straightDist = Vector3(node.x-neighbour.x, node.y-neighbour.y, node.z-neighbour.z).length();
+                if (straightDist > boundDist)
+                    continue;
+
+                PathFinder pathFinder(pPlayer);
+                pathFinder.calculate(Vector3(node.x, node.y, node.z), Vector3(neighbour.x, neighbour.y, neighbour.z));
+                float dist = pathFinder.Length();
+                if (dist > boundDist)
+                    continue;
+
+                WorldBotConfig::TravelNodeLink link {node.id, neighbour.id, PATH_TYPE_WALK, 0, dist, 0.0f, 0.0f, 0, 0, 0, 0};
+                config->recordNodeLinks.push_back(link);
+
+                if (file.is_open())
+                    file << "(" << link.node_id << ", " << link.to_node_id << ")" << std::endl;
+            }
+        }
+        file.close();
+    }
+    else if (str == "clear"){
+        config->recordNodes.clear();
+        config->recordNodeLinks.clear();
+        config->recordNodePaths.clear();
+    }
+    else if (str == "makesql"){
+        std::fstream file {"recordNodes.sql", std::ios::in | std::ios::out | std::ios::trunc};
+        if (!file.is_open()){
+            SendSysMessage("Error opening file \"recordeNodes.sql\". Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        file << "INSERT INTO `worldbot_travelnode` (id, name, map_id, x, y, z, linked)" << std::endl;
+        file << "VALUES" << std::endl;
+        for (auto node: config->recordNodes){
+            file << "(" << node.id << ", '" << node.name << "', " << node.map_id << ", " << node.x << ", "
+                << node.y << ", " << node.z << ", " << static_cast<int>(node.linked) << ")";
+            if (node.id != config->recordNodes.back().id)
+                file << ",";
+            file << std::endl;
+        }
+        file << " AS new_data" << std::endl;
+        file << "ON DUPLICATE KEY UPDATE" << std::endl;
+        file << "name = new_data.name," << std::endl;
+        file << "map_id = new_data.map_id," << std::endl;
+        file << "x = new_data.x," << std::endl;
+        file << "y = new_data.y," << std::endl;
+        file << "z = new_data.z," << std::endl;
+        file << "linked = new_data.linked;" << std::endl;
+        file.close();
+
+        file.open("recordNodeLinks.sql", std::ios::out | std::ios::trunc);
+        if (!file.is_open()){
+            SendSysMessage("Error opening file \"recordeNodeLinks.sql\". Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        file << "INSERT INTO `worldbot_travelnode_link` (node_id, to_node_id, type, object, distance, swim_distance, extra_cost, calculated, max_creature_0, max_creature_1, max_creature_2)" << std::endl;
+        file << "VALUES" << std::endl;
+        for (auto link: config->recordNodeLinks){
+            file << "(" << link.node_id << ", " << link.to_node_id << ", " << static_cast<int>(link.type) << ", " << link.object << ", "
+                << link.distance << ", " << link.swim_distance << ", " << link.extra_cost << ", " << static_cast<int>(link.calculated)
+                << ", " << static_cast<int>(link.max_creature0) << ", " << static_cast<int>(link.max_creature1) << ", " << static_cast<int>(link.max_creature2) << ")";
+            if (link.node_id != config->recordNodeLinks.back().node_id || link.to_node_id != config->recordNodeLinks.back().to_node_id)
+                file << ",";
+            file << std::endl;
+        }
+        file << " AS new_data" << std::endl;
+        file << "ON DUPLICATE KEY UPDATE" << std::endl;
+        file << "type = new_data.type," << std::endl;
+        file << "object = new_data.object," << std::endl;
+        file << "distance = new_data.distance," << std::endl;
+        file << "swim_distance = new_data.swim_distance," << std::endl;
+        file << "extra_cost = new_data.extra_cost," << std::endl;
+        file << "calculated = new_data.calculated," << std::endl;
+        file << "max_creature_0 = new_data.max_creature_0," << std::endl;
+        file << "max_creature_1 = new_data.max_creature_1," << std::endl;
+        file << "max_creature_2 = new_data.max_creature_2;" << std::endl;
+        file.close();
+
+        file.open("recordNodePaths.sql", std::ios::out | std::ios::trunc);
+        if (!file.is_open()){
+            SendSysMessage("Error opening file \"recordeNodePaths.sql\". Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        file << "INSERT INTO `worldbot_travelnode_path` (node_id, to_node_id, nr, map_id, x, y, z)" << std::endl;
+        file << "VALUES" << std::endl;
+        for (auto path: config->recordNodePaths){
+            file << "(" << path.node_id << ", " << path.to_node_id << ", " << path.nr << ", " << path.map_id << ", "
+                << path.x << ", " << path.y << ", " << path.z << ")";
+            if (path.node_id != config->recordNodePaths.back().node_id || path.to_node_id != config->recordNodePaths.back().to_node_id
+                || path.nr != config->recordNodePaths.back().nr)
+                file << ",";
+            file << std::endl;
+        }
+        file << "AS new_data" << std::endl;
+        file << "ON DUPLICATE KEY UPDATE" << std::endl;
+        file << "node_id = new_data.node_id," << std::endl;
+        file << "to_node_id = new_data.to_node_id," << std::endl;
+        file << "nr = new_data.nr," << std::endl;
+        file << "map_id = new_data.map_id," << std::endl;
+        file << "x = new_data.x," << std::endl;
+        file << "y = new_data.y," << std::endl;
+        file << "z = new_data.z;" << std::endl;
+        file.close();
+    }
+    else if (str == "loadrecordnodes"){
+        const char* arg = ExtractArg(&args);
+        if (!arg){
+            SendSysMessage("No file name provided. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        std::ifstream file {arg, std::ios::in};
+        if (!file.is_open()){
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[PlayerBotMgr]::HandleWorldBotRecordPointCommand : error \"loadrecordnodes\" subcommand - can't open file.");
+            return false;
+        }
+        std::string line;
+        while (std::getline(file, line)){
+            std::regex pattern {R"(\((\d+), '([^']*)', (\d+), ([+-]?\d+(?:[.,]\d+)?), ([+-]?\d+(?:[.,]\d+)?), ([+-]?\d+(?:[.,]\d+)?), (\d)\))"};
+            std::smatch matches;
+            if (std::regex_search(line, matches, pattern)){
+                uint32 id = std::stoul(matches[1].str());
+                std::string name {matches[2].str()};
+                uint32 map_id = std::stoul(matches[3].str());
+                float x = std::stof(matches[4].str());
+                float y = std::stof(matches[5].str());
+                float z = std::stof(matches[6].str());
+                bool linked = static_cast<bool>(std::stoi(matches[7].str()));
+
+                WorldBotConfig::TravelNode node {id, name, map_id, x, y, z, linked};
+                // if not found in record node vector
+                if (sPlayerBotMgr.GetRecordNodeIndex(node.id) == UINT_MAX){
+                    config->recordNodes.push_back(node);
+                }
+            }
+        }
+        file.close();
+        std::string msg = "Loaded " + std::to_string(config->recordNodes.size()) + " nodes from file \"" + arg + "\".";
+        SendSysMessage(msg.c_str());
+        // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::HandleWorldBotRecordPointCommand : loaded %d nodes from file.", config->recordNodes.size());
+
+        if (uint32 size = config->recordNodes.size()){
+            config->previousNodeId = config->recordNodes[size-1].id;
+            config->currentNodeId = config->previousNodeId + 1;
+        }
+    }
+    else if (str == "loadrecordnodelinks"){
+        const char* arg = ExtractArg(&args);
+        if (!arg){
+            SendSysMessage("No file name provided. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        std::ifstream file {arg, std::ios::in};
+        if (!file.is_open()){
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[PlayerBotMgr]::HandleWorldBotRecordPointCommand : error \"loadrecordnodelinks\" subcommand - can't open file.");
+            return false;
+        }
+        std::string line;
+        uint32 count = 0;
+        while (std::getline(file, line)){
+            std::regex pattern {R"(\((\d+), (\d+), (\d+), (\d+), ([+-]?\d+(?:[.,]\d+)?), ([+-]?\d+(?:[.,]\d+)?), ([+-]?\d+(?:[.,]\d+)?), (\d+), (\d+), (\d+), (\d+)\))"};
+            std::smatch matches;
+            if (std::regex_search(line, matches, pattern)){
+                uint32 node_id = std::stol(matches[1].str());
+                uint32 to_node_id = std::stol(matches[2].str());
+                uint32 type = std::stol(matches[3].str());
+                uint32 object = std::stol(matches[4].str());
+                float distance = std::stof(matches[5].str());
+                float swim_distance = std::stof(matches[6].str());
+                float extra_cost = std::stof(matches[7].str());
+                uint8 calculated = static_cast<uint8>(std::stoi(matches[8].str()));
+                uint8 max_creature_0 = static_cast<uint8>(std::stoi(matches[9].str()));
+                uint8 max_creature_1 = static_cast<uint8>(std::stoi(matches[10].str()));
+                uint8 max_creature_2 = static_cast<uint8>(std::stoi(matches[11].str()));
+
+                WorldBotConfig::TravelNodeLink link {node_id, to_node_id, static_cast<uint8>(type), object, distance, swim_distance, extra_cost, 
+                    calculated, max_creature_0, max_creature_1, max_creature_2};
+
+                
+                // WorldBotConfig::TravelNodeLink linkFromVector = sPlayerBotMgr.GetTravelNodeLink(node_id, to_node_id);
+                // if not found in recordNodeLinks vector
+                if (!sPlayerBotMgr.DoesLinkExist(node_id, to_node_id)){
+                    config->recordNodeLinks.push_back(link);
+                    count++;
+                }
+            }
+        }
+        file.close();
+        std::string msg = "Loaded " + std::to_string(config->recordNodeLinks.size()) + " node links from file \"" + arg + "\".";
+        SendSysMessage(msg.c_str());
+        // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr]::HandleWorldBotRecordPointCommand : loaded %d node links from file.", count);
+    }
+    else if (str == "parselogfile"){
+        std::fstream file {"waypoints.txt", std::ios::in};
+        if (!file.is_open()){
+            SendSysMessage("Error opening file. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        std::string line;
+        uint32 count1 = 0, count2 = 0;
+        while(std::getline(file, line)){
+            // Add node (1840, Orgrimmar, 1, 1418.283691, -4366.668457, 25.235546, 1) linked to #1839.
+            std::regex pattern {R"(Add node \((\d+), ([^,]*), (\d+), ([+-]?\d+(?:[.,]\d+)?), ([+-]?\d+(?:[.,]\d+)?), ([+-]?\d+(?:[.,]\d+)?), (\d)\) linked to #(\d+)\.)"};
+            std::regex pattern2 {R"(Link has been set from #(\d+) to #(\d+) and vice versa.)"};
+            std::smatch matches;
+            if (std::regex_search(line, matches, pattern)){
+                uint32 id = std::stol(matches[1].str());
+                std::string name = matches[2].str();
+                uint32 map_id = std::stol(matches[3].str());
+                float x = std::stof(matches[4].str());
+                float y = std::stof(matches[5].str());
+                float z = std::stof(matches[6].str());
+                bool linked = static_cast<bool>(std::stod(matches[7].str()));
+                uint32 to_node_id = std::stol(matches[8].str());
+                if (sPlayerBotMgr.GetRecordNodeIndex(id) != UINT_MAX)
+                    continue;
+
+                WorldBotConfig::TravelNode node {id, name, map_id, x, y, z, linked};
+                // index is guaranteed
+                uint32 index = sPlayerBotMgr.GetRecordNodeIndex(to_node_id);
+                WorldBotConfig::TravelNode toNode = config->recordNodes[index];
+                PathFinder pathFinder(pPlayer);
+                pathFinder.calculate(Vector3(node.x, node.y, node.z), Vector3(toNode.x, toNode.y, toNode.z));
+                float distance = pathFinder.Length();
+                WorldBotConfig::TravelNodeLink link {node.id, toNode.id, PATH_TYPE_WALK, 0, distance, 0.0f, 0.0f, 0, 0, 0, 0};
+                WorldBotConfig::TravelNodeLink link2 {toNode.id, node.id, PATH_TYPE_WALK, 0, distance, 0.0f, 0.0f, 0, 0, 0, 0};
+                
+                if (sPlayerBotMgr.GetRecordNodeIndex(node.id) == UINT_MAX){
+                    config->recordNodes.push_back(node);
+                    count1++;
+                }
+
+                if (!sPlayerBotMgr.DoesLinkExist(link.node_id, link.to_node_id) && !sPlayerBotMgr.DoesLinkExist(link.node_id, link2.to_node_id)){
+                    config->recordNodeLinks.push_back(link);
+                    config->recordNodeLinks.push_back(link2);
+                    count2++;
+                }
+            }
+            else if (std::regex_search(line, matches, pattern2)){
+                uint32 node_id = std::stol(matches[1].str());
+                uint32 to_node_id = std::stol(matches[2].str());
+                if (sPlayerBotMgr.DoesLinkExist(node_id, to_node_id))
+                    continue;
+
+                uint32 index1 = sPlayerBotMgr.GetRecordNodeIndex(node_id);
+                if (index1 == UINT_MAX)
+                    continue;
+                uint32 index2 = sPlayerBotMgr.GetRecordNodeIndex(to_node_id);
+                if (index2 == UINT_MAX)
+                    continue;
+
+                WorldBotConfig::TravelNode node = config->recordNodes[index1];
+                WorldBotConfig::TravelNode toNode = config->recordNodes[index2];
+                PathFinder pathFinder(pPlayer);
+                float distance = pathFinder.calculate(Vector3(node.x, node.y, node.z), Vector3(toNode.x, toNode.y, toNode.z));
+
+                WorldBotConfig::TravelNodeLink link {node_id, to_node_id, PATH_TYPE_WALK, 0, distance, 0.0f, 0.0f, 0, 0, 0, 0};
+                config->recordNodeLinks.push_back(link);
+                count2++;
+            }
+        }
+        std::string msg = "Parsed " + std::to_string(count1) + " record nodes and " + std::to_string(count2) + " node links.";
+        SendSysMessage(msg.c_str());
+        file.close();
+    }
+    // TODO: change this command to link existing (in travel node vector) nodes...
+    else if (str == "getdistancebetweennodes"){
+        uint32 firstId = 0, secondId = 0;
+        ExtractUInt32(&args, firstId);
+        if (!firstId){
+            SendSysMessage("Can't extract first node id. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+        ExtractUInt32(&args, secondId);
+        if (!secondId){
+            SendSysMessage("Can't extract second node id. Abort");
+            SetSentErrorMessage(true);
+            return false;
+        }
+
+        WorldBotConfig::TravelNode firstNode = sPlayerBotMgr.GetTravelNode(firstId);
+        if (firstNode.id == 0){
+            std::string msg = "Can't get node with id #" + std::to_string(firstId) + ". Abort.";
+            SendSysMessage(msg.c_str());
+            SetSentErrorMessage(true);
+            return false;
+        }
+        WorldBotConfig::TravelNode secondNode = sPlayerBotMgr.GetTravelNode(secondId);
+        if (secondNode.id == 0){
+            std::string msg = "Can't get node with id #" + std::to_string(secondId) + ". Abort.";
+            SendSysMessage(msg.c_str());
+            SetSentErrorMessage(true);
+            return false;
+        }
+        float distance = Vector3(firstNode.x-secondNode.x, firstNode.y-secondNode.y, firstNode.z-secondNode.z).length();
+        std::string msg = "Straight distance between #" + std::to_string(firstNode.id) + " and #" + std::to_string(secondNode.id) +
+            " = " + std::to_string(distance) + ".";
+        SendSysMessage(msg.c_str());
+    }
+    else if (str == "getclosestnode"){
+        float minDistance = FLT_MAX;
+        uint32 closestNodeId = 0;
+        for (auto& node: config->travelNode){
+            float distance = Vector3(pPlayer->GetPositionX()-node.x, pPlayer->GetPositionY()-node.y, pPlayer->GetPositionZ()-node.z).length();
+            if (distance < minDistance){
+                minDistance = distance;
+                closestNodeId = node.id;
+            }
+        }
+
+        if (!closestNodeId){
+            SendSysMessage("No nodes nearby found for current position.");
+            return true;
+        }
+
+        std::string msg = "Closest node is #" + std::to_string(closestNodeId) + " with distance " + std::to_string(minDistance) +
+            ".";
+        SendSysMessage(msg.c_str());
+    }
+    else if (str == "gotonode"){
+        uint32 id = 0;
+        ExtractUInt32(&args, id);
+        if (!id){
+            SendSysMessage("Can't extract first node id. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+
+        WorldBotConfig::TravelNode node = sPlayerBotMgr.GetTravelNode(id);
+        if (node.id == 0){
+            SendSysMessage("Can't find the node with provided id. Abort.");
+            SetSentErrorMessage(true);
+            return false;
+        }
+
+        pPlayer->TeleportTo(node.map_id, node.x, node.y, node.z, pPlayer->GetOrientation());
+    }
+
+    return true;
+}
+
+bool ChatHandler::HandleWorldBotSpawnCommand(char * args){
+    WorldBotConfig* config = sPlayerBotMgr.GetWorldBotConfig();
+    if (!config)
+        return false;
+    Player* pPlayer = m_session->GetPlayer();
+    if (!pPlayer)
+        return false;
+
+    uint32 count = 10;
+    ExtractUInt32(&args, count);
+
+    std::vector<uint8> allowedRaces {RACE_ORC};
+    std::vector<uint8> allowedClasses {CLASS_WARRIOR};
+
+    if (count > 2000)
+        count = 2000;
+
+    if (allowedRaces.empty()){
+        SendSysMessage("Error: no allowed races specified.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+    
+    if (allowedClasses.empty()){
+        SendSysMessage("Error: no allowed classes specified.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    std::vector<WorldBotConfig::TravelNode> spawnPoints = sPlayerBotMgr.GetTravelNodesFilterByRegex("Orgrimmar");
+    if (spawnPoints.empty()){
+        SendSysMessage("Error: no locations found for provided location.");
+        SetSentErrorMessage(true);
+        return false;
+    }
+
+    for (int i=0; i < count; ++i){
+        uint8 botLevel = urand(6, 18);
+        uint8 botRace = SelectRandomContainerElement(allowedRaces);
+        uint8 botClass = SelectRandomContainerElement(allowedClasses);
+        WorldBotConfig::TravelNode point {SelectRandomContainerElement(spawnPoints)};
+        WorldBotAI* ai = new WorldBotAI(nullptr, botRace, botClass, botLevel, point.map_id, pPlayer->GetMap()->GetInstanceId(), point.x, point.y, point.z, frand(0.0f, 6.28f));
+        if (sPlayerBotMgr.AddBot(ai)){
+            SendSysMessage("Spawned world bot.");
+        }
+        else {
+            delete ai;
+            SendSysMessage("Error spawning world bot.");
+            SetSentErrorMessage(true);
+        }
+        ai->SetTimerTracker((int32)urand(1000, 5000));
+    }
     return true;
 }
 
@@ -2326,4 +3591,13 @@ std::vector<std::pair<uint32, uint32>> PlayerBotMgr::GetSpecByName(std::string p
         talentSequence = it->second;
 
     return talentSequence;
+}
+
+WorldBotConfig::TravelNode PlayerBotMgr::GetTravelNode(uint32 id) const {
+    WorldBotConfig::TravelNode travelNode;
+    for (auto node: m_worldBotConfig.travelNode){
+        if (id == node.id)
+            travelNode = node;
+    }
+    return travelNode;
 }

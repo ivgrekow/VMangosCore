@@ -1055,5 +1055,5 @@ void WorldBotAI::PopulateSpellData(){
     }
 
     PopulateProffessionSpells();
-    sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::UpdateAI : Profession spells are generated.");
+    // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::UpdateAI : Profession spells are generated.");
 }

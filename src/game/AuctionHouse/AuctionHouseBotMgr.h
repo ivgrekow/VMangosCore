@@ -11,8 +11,8 @@ class Player;
 
 struct AuctionHouseBotEntry
 {
-    uint32 item;
-    uint32 avg_buyout;
+    uint32 item = 0;
+    uint32 avg_buyout = 0;
 };
 
 struct AuctionHouseBotConfig

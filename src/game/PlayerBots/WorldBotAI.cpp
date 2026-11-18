@@ -30,7 +30,7 @@ void WorldBotAI::UpdateAI(uint32 const diff){
 
     UpdateMovements();
 
-    UpdateOutOfCombatAI();
+    // UpdateOutOfCombatAI();
 }
 
 void WorldBotAI::OnPacketReceived(WorldPacket const* packet){
@@ -40,7 +40,7 @@ void WorldBotAI::OnPacketReceived(WorldPacket const* packet){
             if (!me)
                 return;
 
-            std::unique_ptr<WorldPacket> data = std::make_unique<WorldPacket>(MSG_MOVE_WORLDPORT_ACK);
+            auto data = std::make_unique<NullClientPacket>(MSG_MOVE_WORLDPORT_ACK);
             me->GetSession()->QueuePacket(std::move(data));
             break;
         }
@@ -49,28 +49,68 @@ void WorldBotAI::OnPacketReceived(WorldPacket const* packet){
             if (!me)
                 return;
 
-            std::unique_ptr<WorldPacket> data = std::make_unique<WorldPacket>(MSG_MOVE_TELEPORT_ACK);
-            *data << me->GetObjectGuid();
+            auto data = std::make_unique<WorldPackets::Movement::MoveTeleportAck>();
+            data->guid = me->GetObjectGuid();
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_9_4
-            *data << me->GetLastCounterForMovementChangeType(TELEPORT);
+            data->movementCounter = me->GetLastCounterForMovementChangeType(TELEPORT);
 #endif
-            *data << uint32(time(nullptr));
+            data->time = uint32(time(nullptr));
             me->GetSession()->QueuePacket(std::move(data));
             break;
         }
         case SMSG_GROUP_INVITE:
         {
-            std::unique_ptr<WorldPacket> data = std::make_unique<WorldPacket>(CMSG_GROUP_ACCEPT, 8);
-            *data << me->GetObjectGuid();
+            // std::unique_ptr<WorldPacket> data = std::make_unique<WorldPacket>(CMSG_GROUP_ACCEPT, 8);
+            auto data = std::make_unique<NullClientPacket>(CMSG_GROUP_ACCEPT);
             me->GetSession()->QueuePacket(std::move(data));
 
             const uint8* leaderName = packet->contents();
             Player* leader = sObjectMgr.GetPlayer((char*)leaderName);
             if (leader){
-                m_leader = leader;
+                // m_leader = leader;
             }
 
             return;
+        }
+        case SMSG_TRADE_STATUS:
+        {
+            if (!me)
+                return;
+
+            uint32 status = *((uint32*)(*packet).contents());
+            if (status == TRADE_STATUS_BEGIN_TRADE)
+            {
+                auto data = std::make_unique<NullClientPacket>(CMSG_BEGIN_TRADE);
+                me->GetSession()->QueuePacket(std::move(data));
+            }
+            else if (status == TRADE_STATUS_TRADE_ACCEPT)
+            {
+                auto data = std::make_unique<WorldPackets::Trade::AcceptTrade>();
+                me->GetSession()->QueuePacket(std::move(data));
+
+            }
+            break;
+        }
+        case SMSG_RESURRECT_REQUEST:
+        {
+            if (!me)
+                return;
+
+            auto data = std::make_unique<WorldPackets::Misc::ResurrectResponse>();
+            data->resurrectorGuid = me->GetResurrector();
+            data->accept = true;
+            me->GetSession()->QueuePacket(std::move(data));
+            break;
+        }
+        // need to test...
+        case SMSG_SUMMON_REQUEST:
+        {
+            if (!me)
+                return;
+            
+            auto data = std::make_unique<WorldPackets::Misc::SummonResponse>();
+            uint32 summonerGuid = *((uint32*)(*packet).contents());
+            data->summonerGuid = summonerGuid;
         }
     }
 }
@@ -315,7 +355,7 @@ void WorldBotAI::GenerateInventorySlotPermEnchant(Item* pItem){
         return;
         
     
-    float gearQuality = (sPlayerBotMgr.GetWorldBotGearQuality() + frand(-0.2, 0.1)) * qualityScale;
+    float gearQuality = (sPlayerBotMgr.GetWorldBotGearQuality() + frand(-0.2f, 0.1f)) * qualityScale;
     if (gearQuality < 0.0f)
         gearQuality = 0.0f;
 
@@ -581,7 +621,8 @@ bool WorldBotAI::GenerateInventorySlotItem(std::map<uint32 /*slot*/, std::vector
         }
         else {
             ItemPosCountVec dest;
-            uint8 msg = me->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item);
+            uint8 destSlot;
+            uint8 msg = me->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, destSlot);
             if (msg == EQUIP_ERR_OK)
                 me->StoreItem(dest, item, true);
         }
@@ -610,24 +651,25 @@ void WorldBotAI::GenerateBags(){
     for (uint16 slot = INVENTORY_SLOT_BAG_START; slot != INVENTORY_SLOT_BAG_END - 1; ++slot){
         Item* pBag = Item::CreateItem(bagId, 1, me->GetObjectGuid());
         
-        if (Item* pItem = me->EquipItem(slot, pBag, true))
-        {
-            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Equipped bag into slot %d with item guid (#%d).", slot, pItem->GetProto()->ItemId);
-        }
-        else
-        {
+        Item* pItem = me->EquipItem(slot, pBag, true);
+        if (!pItem){
             sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Bot DIDN'T equip the bag.");
         }
+        // {
+        //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Equipped bag into slot %d with item guid (#%d).", slot, pItem->GetProto()->ItemId);
+        // }
+        // else
     }
 
-    if (m_class == CLASS_WARRIOR){
+    if (m_class == CLASS_HUNTER){
         Item* pItem = me->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
-        if (pItem)
-            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI] : ranged weapon equipped \"%s\"", pItem->GetProto()->Name1);
-        else{
-            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "WorldBotAI::GenerateBags : no ranged weapon found.");
+        if (!pItem)
             return;
-        }
+        //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI] : ranged weapon equipped \"%s\"", pItem->GetProto()->Name1);
+        // else{
+        //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "WorldBotAI::GenerateBags : no ranged weapon found.");
+        //     return;
+        // }
 
         std::vector<uint32> ammoBags;
 
@@ -656,11 +698,11 @@ void WorldBotAI::GenerateBags(){
         if (pAmmoBag){
             if (!me->EquipItem(INVENTORY_SLOT_BAG_END-1, pAmmoBag, true))
                 sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Bot #%d can't equip ammo bag.", me->GetGUIDLow());
-            else
-                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Bot #%d equipped ammo bag \"%s\".", me->GetGUIDLow(), pAmmoBag->GetProto()->Name1);
+            // else
+            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Bot #%d equipped ammo bag \"%s\".", me->GetGUIDLow(), pAmmoBag->GetProto()->Name1);
         }
         else
-            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Can't create item.");
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Can't create ammo bagitem #%d.", ammoBagId);
     }
     else{
         Item* pBag = Item::CreateItem(bagId, 1, me->GetObjectGuid());
@@ -676,7 +718,7 @@ void WorldBotAI::GenerateBags(){
     }
 }
 
-void WorldBotAI::AddAllSpellReagents(){
+void WorldBotAI::AddAllClassSpellReagents(){
     for (auto itr = m_spellBook.begin(); itr != m_spellBook.end(); itr++){
         for (const auto& pSpell : itr->second)
         {
@@ -696,7 +738,7 @@ void WorldBotAI::AddAllSpellReagents(){
         }
     }
 
-    for (const auto& pSpell: m_proffessionBook){
+    for (const auto& pSpell: m_professionBook){
         if (!pSpell)
             continue;
 
@@ -710,6 +752,52 @@ void WorldBotAI::AddAllSpellReagents(){
             if (totem && !me->HasItemCount(totem, 1))
                 AddItemToInventory(totem);
         }
+    }
+}
+
+void WorldBotAI::AddAllProfessionSpellReagents(uint32 id){
+    const SpellEntry* spellEntry = nullptr;
+    for (const auto& pSpell: m_professionBook){
+        if (!pSpell)
+            continue;
+        
+        if (pSpell->Id == id){
+            spellEntry = pSpell;
+            break;
+        }
+    }
+
+    // for (const auto& reagent : spellEntry->Reagent)
+    for (int i=0; i < MAX_SPELL_REAGENTS; ++i)
+    {
+        if (spellEntry->Reagent[i] && !me->HasItemCount(spellEntry->Reagent[i], spellEntry->ReagentCount[i])){
+            AddItemToInventory(spellEntry->Reagent[i], spellEntry->ReagentCount[i]);
+            // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::AddProffessionSpellReagents : adding item \"%s\" to inventory; %d units.", sObjectMgr.GetItemPrototype(reagent)->Name1, spellEntry->ReagentCount[index]);
+        }
+    }
+}
+
+void WorldBotAI::AddAllProfessionSpellTotems(uint32 id) {
+    const SpellEntry* spellEntry = nullptr;
+    for (const auto& pSpell: m_professionBook){
+        if (!pSpell)
+            continue;
+        
+        if (pSpell->Id == id){
+            spellEntry = pSpell;
+            break;
+        }
+    }
+    
+    uint8 index = 0;
+    for (const auto& totem : spellEntry->Totem)
+    {
+        if (totem && !me->HasItemCount(totem, 1))
+        {    
+            AddItemToInventory(totem);
+            // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::AddProffessionSpellReagents : adding item \"%s\" to inventory.", sObjectMgr.GetItemPrototype(totem)->Name1);
+        }
+        index++;
     }
 }
 
@@ -759,14 +847,14 @@ void WorldBotAI::InitTalentsByRandomSpec(){
 }
 
 void WorldBotAI::PopulateProffessionSpells() {
+    // gathering skill
     std::vector<uint32> skillVector {SKILL_MINING, SKILL_SKINNING, SKILL_HERBALISM};
     uint32 gatherSkillId = SelectRandomContainerElement(skillVector);
+    m_gatherProfession = gatherSkillId;
     SkillLineAbilityMapBounds skillMapBounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySkillId(gatherSkillId);
-    // uint32 spellsCount = 0;
     std::vector<uint32> spellVector;
     for (auto it = skillMapBounds.first; it != skillMapBounds.second; ++it){
         spellVector.push_back(it->second->spellId);
-        // spellsCount++;
     }
     if (spellVector.size()){
         uint32 skillLevel = me->GetLevel() * 5 + urand(5, 25);
@@ -777,13 +865,15 @@ void WorldBotAI::PopulateProffessionSpells() {
         uint32 maxIndex = static_cast<uint32>(std::round(normalizedLevel * (spellVector.size() - 1)));
         for (uint32 i=0; i != maxIndex; ++i){
             me->LearnSpell(spellVector[i], false);
-            m_proffessionBook.push_back(sSpellMgr.GetSpellEntry(spellVector[i]));
+            m_professionBook.push_back(sSpellMgr.GetSpellEntry(spellVector[i]));
+            // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::PopulateProffessionSpells : adding spell #%d, name \"%s\"", sSpellMgr.GetSpellEntry(spellVector[i])->Id, sSpellMgr.GetSpellEntry(spellVector[i])->SpellName[0].c_str());
         }
     }
 
     skillVector.clear();
 
-    uint32 skillId = SKILL_NONE;
+    // crafting skill
+    uint32 craftSkillId = SKILL_NONE;
     switch (gatherSkillId){
         case SKILL_MINING:
         {
@@ -803,12 +893,14 @@ void WorldBotAI::PopulateProffessionSpells() {
             break;
         }
         default:
+            skillVector = {SKILL_ENCHANTING};
             // nonsense
-            return;
+            // return;
     }
     
-    skillId = SelectRandomContainerElement(skillVector);
-    skillMapBounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySkillId(skillId);
+    craftSkillId = SelectRandomContainerElement(skillVector);
+    m_craftProfession = craftSkillId;
+    skillMapBounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySkillId(craftSkillId);
     
     for (auto it = skillMapBounds.first; it != skillMapBounds.second; ++it){
         spellVector.push_back(it->second->spellId);
@@ -819,11 +911,12 @@ void WorldBotAI::PopulateProffessionSpells() {
         float normalizedLevel = skillLevel / 300.0f;
         if (normalizedLevel > 1.0f)
             normalizedLevel = 1.0f;
-    
+            
         uint32 maxIndex = static_cast<uint32>(std::round(normalizedLevel * (spellVector.size() - 1)));
         for (uint32 i=0; i != maxIndex; ++i){
+            const SpellEntry* pSpellEntry = sSpellMgr.GetSpellEntry(spellVector[i]);
             me->LearnSpell(spellVector[i], false);
-            m_proffessionBook.push_back(sSpellMgr.GetSpellEntry(spellVector[i]));
+            m_professionBook.push_back(sSpellMgr.GetSpellEntry(spellVector[i]));
         }
     }
 }
@@ -848,7 +941,7 @@ bool WorldBotAI::UseItemEffect(Item* pItem)
         {
             if (SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(itr.SpellId))
             {
-                if (me->IsSpellReady(*pSpellEntry, pProto))
+                if (me->IsSpellReady(pSpellEntry, pProto))
                 {
                     if (pSpellEntry->IsPositiveSpell())
                         return me->CastSpell(me, pSpellEntry, false, pItem) == SPELL_CAST_OK;
@@ -863,7 +956,7 @@ bool WorldBotAI::UseItemEffect(Item* pItem)
 
 bool WorldBotAI::CanTryToCastSpell(Unit const* pTarget, SpellEntry const* pSpellEntry) const{
 
-    if (!me->IsSpellReady(pSpellEntry->Id))
+    if (!me->IsSpellReady(pSpellEntry))
         return false;
 
     if (me->HasGCD(pSpellEntry))
@@ -1040,13 +1133,108 @@ void WorldBotAI::GenerateMounts(){
             return;
         }
         ItemPosCountVec dest;
-        if (me->CanStoreItem(INVENTORY_SLOT_BAG_0, NULL_SLOT, dest, pItem) == EQUIP_ERR_OK)
+        uint8 destSlot;
+        if (me->CanStoreItem(INVENTORY_SLOT_BAG_0, NULL_SLOT, dest, pItem, destSlot) == EQUIP_ERR_OK)
             me->StoreItem(dest, pItem, true);
         else {
             sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "WorldBotAI::GenerateMounts : can't store item with guid %d.", pItem->GetGUIDLow());
             return;
         }
         m_ridingPet = pItem;
+    }
+}
+
+std::vector<const SpellEntry*> WorldBotAI::GetProffessionSpellsFilterByRegex(std::string filter) const {
+    std::vector<const SpellEntry*> result;
+
+    if (filter.empty())
+        return result;
+
+    std::regex pattern {filter};
+    for (auto spellEntry: m_professionBook){
+        if (std::regex_search(spellEntry->SpellName[0], pattern))
+            result.push_back(spellEntry);
+    }
+
+    return result;
+}
+
+void WorldBotAI::CastEnchantSpell(uint32 id){
+    const SpellEntry* pSpellEntry = nullptr;
+    for (auto spell: m_professionBook){
+        if (spell->Id == id){
+            // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::CastProfessionSpell : found spell #%d, name \"%s\".", id, spell->SpellName[0].c_str());
+            pSpellEntry = spell;
+        }
+    }
+
+    TradeData* my_trade = me->GetTradeData();
+    if (!my_trade){
+        // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::CastProfessionSpell : no trade data found.");
+        return;
+    }
+
+    Player* pTrader = my_trade->GetTrader();
+    if (!pTrader){
+        // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::CastProfessionSpell : no trader player found.");
+        return;
+    }
+
+    TradeData* his_trade = my_trade->GetTraderData();
+    if (!his_trade){
+        // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::CastProfessionSpell : no trader data found.");
+        return;
+    }
+    
+    if (!pSpellEntry || !me->HasSpell(pSpellEntry->Id)){
+        // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::CastProfessionSpell : no spells found for #%d.", id);
+        std::string msg = "I can't find any recipes for id #"+ std::to_string(id) + ".";
+        me->MonsterWhisper(msg.c_str(), pTrader);
+        return;
+    }
+
+    if (pTrader->GetSession()->GetSecurity() == SEC_ADMINISTRATOR){
+        AddAllProfessionSpellReagents(id);
+    }
+    else {
+        bool notEnoughReagents = false;
+        std::vector<uint32> reagentCounts(MAX_SPELL_REAGENTS, 0);
+        for (int i=0; i < MAX_SPELL_REAGENTS; ++i){
+            if (pSpellEntry->Reagent[i])
+                reagentCounts[i] = me->GetItemCount(pSpellEntry->Reagent[i]);
+
+            if (!notEnoughReagents && reagentCounts[i] < pSpellEntry->ReagentCount[i])
+                notEnoughReagents = true;
+        }
+
+        if (notEnoughReagents){
+            std::string msg = "I'm still missing some reagents for the recipe [" + pSpellEntry->SpellName[0] + "] - " + 
+            std::to_string(pSpellEntry->Id) + ". My current reagents are:";
+            me->MonsterWhisper(msg.c_str(), pTrader);
+            for (int i=0; i < MAX_SPELL_REAGENTS; ++i){
+                const ItemPrototype* reagentProto = sObjectMgr.GetItemPrototype(pSpellEntry->Reagent[i]);
+                if (!reagentProto){
+                    continue;
+                }
+                msg = "[" + std::string(reagentProto->Name1) + "] - " + std::to_string(reagentCounts[i]) + "/" + 
+                    std::to_string(pSpellEntry->ReagentCount[i]);
+                me->MonsterWhisper(msg.c_str(), pTrader);
+            }
+            return;
+        }
+    }
+
+    AddAllProfessionSpellTotems(id);
+
+    Item* pItem = his_trade->GetItem(TRADE_SLOT_NONTRADED);
+    if (m_craftProfession == SKILL_ENCHANTING){
+        if (!pItem){
+            // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::CastProfessionSpell : no non-trade item found.");
+            std::string msg {"I can't see your item to enchant. Place it to non-trade slot first."};
+            me->MonsterWhisper(msg.c_str(), pTrader);
+            return;
+        }
+        my_trade->SetSpell(id);
     }
 }
 
@@ -1064,7 +1252,7 @@ void WorldBotAI::AddRangedWeaponAmmo(){
         // Thorium Shells, Mithril Gyro-Shot, Accurate Slugs, High-Impact Mithril Slugs, Crafted Solid Shot, Solid Shot, Heavy Shot, Light Shot
         ammos = {15997, 10513, 11284, 10512, 8069, 3033, 2519, 2516};
 
-    const ItemPrototype* pProto;
+    const ItemPrototype* pProto = nullptr;
     for (uint32 id: ammos){
         pProto = sObjectMgr.GetItemPrototype(id);
         if (!pProto)
@@ -1073,6 +1261,10 @@ void WorldBotAI::AddRangedWeaponAmmo(){
         if (m_level >= pProto->RequiredLevel){
             break;
         }
+    }
+    if (!pProto){
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::AddRangeWeaponAmmo : pProto == nullptr.");
+        return;
     }
     
     AddItemToInventory(pProto->ItemId, pProto->GetMaxStackSize());
@@ -1179,19 +1371,224 @@ Unit* WorldBotAI::SelectAttackTarget(Player* pLeader) const
     return nullptr;
 }
 
-void WorldBotAI::UpdateMovements(){
-    if (m_leader){
-        if (!m_leader->IsMounted() && me->GetDistance2d(m_leader->GetPosition()) <= 10.0f)
-            me->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+void WorldBotAI::SetTravelJourney(std::vector<WorldBotConfig::TravelNode> travel, Position targetPos) {
+    m_travelNodeVector = travel;
+    m_travelNodePath.clear();
+    m_currentNodeIndex = 0;
+    m_travelNodePathNR = 0;
+    m_currentNode = m_travelNodeVector[m_currentNodeIndex];
+    m_targetPos = targetPos;
+}
 
-        if (me->GetDistance2d(m_leader) >= 25.0f && !me->IsMounted()){
-            UseMount();
+void WorldBotAI::ClearTravelData(bool clearTargetPos /* = false */){
+    m_travelNodeVector.clear();
+    m_travelNodePath.clear();
+    m_currentNode = WorldBotConfig::TravelNode();
+    m_currentNodeIndex = 0;
+    m_travelNodePathNR = 0;
+    if (clearTargetPos)
+        m_targetPos = Position();
+}
+
+void WorldBotAI::UpdateMovements(){
+    if (me->IsTaxiFlying()){
+        return;
+    }
+
+    if (m_leader){
+        // if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() == MOVE_FLY_MODE)
+        //     return;
+
+        if (m_ridingPet){
+            if (m_metrics[WB_METRIC_DISTANCE_TO_LEADER] < 0.0f)
+                m_metrics[WB_METRIC_DISTANCE_TO_LEADER] = me->GetDistance3dToCenter(m_leader->GetPosition());
+
+            if (!m_leader->IsMounted() && me->GetDistance3dToCenter(m_leader->GetPosition()) <= 10.0f)
+                me->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
+    
+            if (m_metrics[WB_METRIC_DISTANCE_TO_LEADER] >= 25.0f && !me->IsMounted()){
+                UseMount();
+                return;
+            }
+        }
+
+        if (m_metrics[WB_METRIC_DISTANCE_TO_LEADER] <= VISIBILITY_DISTANCE_NORMAL && !m_travelNodeVector.empty()){
+            ClearTravelData(true);
+            return;
+        }
+        
+        FollowLeader();
+        FlushMetrics();
+        return;
+    }
+    
+    if (m_travelNodeVector.empty()){
+        // if m_targetPos is zero'ed then do nothing, stay idle
+        if (m_targetPos.x == 0.0f && m_targetPos.y == 0.0f && m_targetPos.z == 0.0f){
+
+            if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE){
+                me->GetMotionMaster()->MoveIdle();
+            }
+            return;
+        }
+        
+        if (m_metrics[WB_METRIC_DISTANCE_TO_TARGET_POS] < 0.0f)
+            m_metrics[WB_METRIC_DISTANCE_TO_TARGET_POS] = me->GetDistance3dToCenter(m_targetPos);
+
+        if (m_metrics[WB_METRIC_DISTANCE_TO_TARGET_POS] <= 5.0f){
+            me->StopMoving();
+            me->GetMotionMaster()->MoveIdle();
+            m_targetPos = Position(0.0f, 0.0f, 0.0f, 0.0f);
+            m_updateTimer.Reset((int32)urand(6000, 20000));
+            FlushMetrics();
+            return;
+        }
+        else if (m_metrics[WB_METRIC_DISTANCE_TO_TARGET_POS] <= 200.0f){
+            if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE)
+                me->GetMotionMaster()->MovePoint(0, m_targetPos.x, m_targetPos.y, m_targetPos.z, MOVE_PATHFINDING|MOVE_EXCLUDE_STEEP_SLOPES, 0.0f, me->GetOrientation());
+        }
+        else {
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WB]::UpdateMovements : can't reach m_targetPos. Too far away ( > 200.0f yards)");
+        }
+        FlushMetrics();
+        return;
+    }
+    else if (m_travelNodeVector.size() == 1){
+        Position pos {m_travelNodeVector[0].x, m_travelNodeVector[0].y, m_travelNodeVector[0].z, 10.0f};
+        float dist = me->GetDistance3dToCenter(pos);
+        if (dist <= 4.5f){
+            me->StopMoving();
+            ClearTravelData();
+        }
+        else {
+            if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE)
+                me->GetMotionMaster()->MovePoint(0, pos.x, pos.y, pos.z, MOVE_PATHFINDING|MOVE_EXCLUDE_STEEP_SLOPES);
+        }
+        FlushMetrics();
+        return;
+    }
+
+    // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WB]::UpdateMovements : m_travelNodeVector.size() > 1. Skipping rest logic...");
+    WorldBotConfig::TravelNode targetNode = m_travelNodeVector[m_travelNodeVector.size()-1];
+    // we are at the end node. clear all travel data
+    if (m_currentNode.id == targetNode.id){
+        ClearTravelData();
+        FlushMetrics();
+        return;
+    }
+    
+    if (m_currentNodeIndex + 1 >= m_travelNodeVector.size()){
+        ClearTravelData(true);
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateMovements : target can not be reached.");
+        FlushMetrics();
+        return;
+    }
+
+    WorldBotConfig::TravelNode nextNode = m_travelNodeVector[m_currentNodeIndex+1];
+    float distToNextNode = me->GetDistance3dToCenter(nextNode.x, nextNode.y, nextNode.z);
+    if (distToNextNode <= 7.0f){
+        me->GetMotionMaster()->MoveIdle();
+        m_currentNode = nextNode;
+        m_currentNodeIndex++;
+        FlushMetrics();
+        return;
+    }
+    else if (distToNextNode <= 100.0f){
+        if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE)
+            me->GetMotionMaster()->MovePoint(0, nextNode.x, nextNode.y, nextNode.z, MOVE_PATHFINDING);
+        FlushMetrics();
+        return;
+    }
+
+    if (m_travelNodePath.empty()){
+
+        WorldBotConfig::TravelNodeLink link = sPlayerBotMgr.GetTravelNodeLink(m_currentNode.id, nextNode.id);
+        if (link.distance == 0.0f){
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateMovements : broken link between node #%d and #%d.", m_currentNode.id, nextNode.id);
+            ClearTravelData(true);
+            FlushMetrics();
             return;
         }
 
-        FollowLeader();
+        if (link.type == PATH_TYPE_FLIGHTPATH){
+            const TaxiPathEntry* taxiEntry = sTaxiPathStore.LookupEntry(link.object);
+            if (!taxiEntry){
+                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateMovements : error getting taxiEntry with id #%d.", link.object);
+                ClearTravelData(true);
+            }
+            uint32 ridingCreatureId = 0;
+            if (sPlayerBotMgr.GetTaxiFlightNodeInfoById(taxiEntry->from).mount_creature_id1)
+                ridingCreatureId = sPlayerBotMgr.GetTaxiFlightNodeInfoById(taxiEntry->from).mount_creature_id1;
+            else if (sPlayerBotMgr.GetTaxiFlightNodeInfoById(taxiEntry->from).mount_creature_id2)
+                ridingCreatureId = sPlayerBotMgr.GetTaxiFlightNodeInfoById(taxiEntry->from).mount_creature_id2;
+                
+            uint32 displayId = 0;
+            for (auto itr = sObjectMgr.GetCreatureInfoMap().begin(); itr != sObjectMgr.GetCreatureInfoMap().end(); ++itr){
+                if (ridingCreatureId == itr->second->entry)
+                    displayId = itr->second->display_id[0];
+            }
+
+            m_currentNodeIndex++;
+            m_currentNode = m_travelNodeVector[m_currentNodeIndex];
+
+            me->Mount(displayId);
+            me->GetMotionMaster()->MoveTaxiFlight(link.object, 0);
+            FlushMetrics();
+            return;
+        }
+
+        m_travelNodePath = sPlayerBotMgr.GetTravelNodePathVector(me->GetMapId(), m_currentNode.id, nextNode.id);
+        if (m_travelNodePath.empty()){
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WB]::UpdateMovements : can't load travel node paths.");
+            ClearTravelData(true);
+            FlushMetrics();
+            return;
+        }
+        else
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WB]::UpdateMovements : loaded %d travel node paths from node #%d to node #%d.", m_travelNodePath.size(), m_currentNode.id, nextNode.id);
+        return;
+    }
+    else {
+        if (m_travelNodePathNR == m_travelNodePath.size()){
+            m_currentNodeIndex++;
+            m_currentNode = m_travelNodeVector[m_currentNodeIndex];
+            m_travelNodePath.clear();
+            m_travelNodePathNR = 0;
+            FlushMetrics();
+            return;
+        }
+        
+        if (m_travelNodePathNR + 1 > m_travelNodePath.size()){
+            ClearTravelData(true);
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WB]::UpdateMovements : can't increment m_travelNodePathNR, but m_targetPos is not reached.");
+            FlushMetrics();
+            return;
+        }
+    
+        Position pos = m_travelNodePath[m_travelNodePathNR].GetPosition();
+        if (me->GetDistance3dToCenter(pos) > 5.5f){
+            // if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE){
+            //     // float angle = std::atan2(pos.y - me->GetPositionY(), pos.x - me->GetPositionX());
+            //     // if (angle < 0.0f)
+            //     //     angle += 2.0f * M_PI_F;
+            //     // me->SetFacingTo(angle);
+                
+            // }
+            if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE)
+                me->GetMotionMaster()->MovePoint(m_travelNodePathNR, pos.x, pos.y, pos.z, MOVE_PATHFINDING, 0.0f, 0.0f);
+            FlushMetrics();
+            return;
+        }
+        else {
+            me->GetMotionMaster()->MoveIdle();
+            m_travelNodePathNR++;
+            FlushMetrics();
+            return;
+        }
+
     }
 
+    FlushMetrics();
 }
 
 void WorldBotAI::FollowLeader(){
@@ -1218,7 +1615,7 @@ void WorldBotAI::FollowLeader(){
         return;
     }
 
-    float angle = linlin(frand(0.0f, M_PI/3), 0.0f, M_PI/3,
+    float angle = linlin(frand(0.0f, (float)M_PI/3), 0.0f, (float)M_PI/3,
         m_leader->GetOrientation()-7*M_PI/6,
         m_leader->GetOrientation()-5*M_PI/6);
     m_leader->GetNearPoint(m_leader, x, y, z, 0, 5.0f, angle);
@@ -1228,6 +1625,13 @@ void WorldBotAI::FollowLeader(){
 
 
     me->GetMotionMaster()->MovePoint(0, x, y, z, MOVE_PATHFINDING | excludeSteepSlopes);
+}
+
+void WorldBotAI::SetLeader(Player* pLeader){
+    if (!pLeader)
+        return;
+
+    m_leader = pLeader;
 }
 
 void WorldBotAI::TravelToTarget(Unit* pTarget){
