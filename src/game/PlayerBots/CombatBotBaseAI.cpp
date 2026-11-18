@@ -392,8 +392,8 @@ void CombatBotBaseAI::PopulateSpellData()
                 }
                 else if (pSpellEntry->SpellName[0].find("Turn Evil") != std::string::npos)
                 {
-                    if (IsHigherRankSpell(m_spells.paladin.pTurnEvil))
-                        m_spells.paladin.pTurnEvil = pSpellEntry;
+                    if (IsHigherRankSpell(m_spells.paladin.pTurnUndead))
+                        m_spells.paladin.pTurnUndead = pSpellEntry;
                 }
                 else if (pSpellEntry->SpellName[0].find("Holy Shield") != std::string::npos)
                 {

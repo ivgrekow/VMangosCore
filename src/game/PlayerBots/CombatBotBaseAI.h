@@ -324,8 +324,35 @@ public:
             SpellEntry const* pHolyShock;
             SpellEntry const* pDivineFavor;
             SpellEntry const* pHolyWrath;
-            SpellEntry const* pTurnEvil;
+            SpellEntry const* pTurnUndead;
             SpellEntry const* pHolyShield;
+            const SpellEntry* pHolyLight;
+            const SpellEntry* pFlashofLight;
+            const SpellEntry* pSealofRighteousness;
+            const SpellEntry* pPurify;
+            const SpellEntry* pRedemption;
+            const SpellEntry* pBlessingofWisdom;
+            const SpellEntry* pGreaterBlessingofWisdom;
+            const SpellEntry* pConcentrationAura;
+            const SpellEntry* pSealofLight;
+            const SpellEntry* pSealofWisdom;
+            const SpellEntry* pSummonHorse;
+            const SpellEntry* pDevotionAura;
+            const SpellEntry* pDivineProtection;
+            const SpellEntry* pGreaterBlessingofKings;
+            const SpellEntry* pSealofJustice;
+            const SpellEntry* pBlessingofSalvation;
+            const SpellEntry* pGreaterBlessingofSalvation;
+            const SpellEntry* pShadowResistanceAura;
+            const SpellEntry* pBlessingofSanctuary;
+            const SpellEntry* pGreaterBlessingofSanctuary;
+            const SpellEntry* pDivineIntervention;
+            const SpellEntry* pFrostResistanceAura;
+            const SpellEntry* pFireResistanceAura;
+            const SpellEntry* pBlessingofMight;
+            const SpellEntry* pGreaterBlessingofMight;
+            const SpellEntry* pRetributionAura;
+            const SpellEntry* pRepentance;
         } paladin;
         struct
         {
@@ -597,6 +624,8 @@ public:
             SpellEntry const* pInsectSwarm;
             SpellEntry const* pBarkskin;
             SpellEntry const* pNaturesGrasp;
+            const SpellEntry* pTeleportMoonglade;
+            const SpellEntry* pSootheAnimal;
             SpellEntry const* pMarkoftheWild;
             SpellEntry const* pGiftoftheWild;
             SpellEntry const* pThorns;
@@ -609,6 +638,12 @@ public:
             SpellEntry const* pNaturesSwiftness;
             SpellEntry const* pEntanglingRoots;
             SpellEntry const* pHibernate;
+            const SpellEntry* pHealingTouch;
+            const SpellEntry* pRejuvenation;
+            const SpellEntry* pRegrowth;
+            const SpellEntry* pOmenofClarity;
+            const SpellEntry* pTranquility;
+            const SpellEntry* pSwiftmend;
             // Cat
             SpellEntry const* pProwl;
             SpellEntry const* pPounce;

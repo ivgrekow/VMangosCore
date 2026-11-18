@@ -20704,30 +20704,44 @@ InventoryResult Player::CanEquipUniqueItem(ItemPrototype const* itemProto, uint8
 
     return EQUIP_ERR_OK;
 }
-
 bool Player::LearnTalent(uint32 talentId, uint32 talentRank)
 {
     uint32 curTalentPoints = GetFreeTalentPoints();
 
     if (curTalentPoints == 0)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "LearnTalent failed: no free talent points, talentId=%u, rank=%u", talentId, talentRank);
         return false;
+    }
 
     if (talentRank >= MAX_TALENT_RANK)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "LearnTalent failed: invalid talent rank %u, MAX_TALENT_RANK=%u, talentId=%u", talentRank, (uint32)MAX_TALENT_RANK, talentId);
         return false;
+    }
 
     TalentEntry const* talentInfo = sTalentStore.LookupEntry(talentId);
 
     if (!talentInfo)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "LearnTalent failed: talent not found, talentId=%u", talentId);
         return false;
+    }
 
     TalentTabEntry const* talentTabInfo = sTalentTabStore.LookupEntry(talentInfo->TalentTab);
 
     if (!talentTabInfo)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "LearnTalent failed: talent tab not found, talentId=%u, talentTab=%u", talentId, talentInfo->TalentTab);
         return false;
+    }
 
     // prevent learn talent for different class (cheating)
     if ((GetClassMask() & talentTabInfo->ClassMask) == 0)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "LearnTalent failed: talent belongs to another class, talentId=%u, playerClassMask=%u, tabClassMask=%u", talentId, GetClassMask(), talentTabInfo->ClassMask);
         return false;
+    }
 
     // find current max talent rank
     uint32 curtalent_maxrank = 0;
@@ -20742,11 +20756,19 @@ bool Player::LearnTalent(uint32 talentId, uint32 talentRank)
 
     // we already have same or higher talent rank learned
     if (curtalent_maxrank >= (talentRank + 1))
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "LearnTalent failed: same or higher rank already learned, talentId=%u, currentRank=%u, requestedRank=%u", talentId, curtalent_maxrank, talentRank);
         return false;
+    }
+
+    uint32 neededPoints = talentRank - curtalent_maxrank + 1;
 
     // check if we have enough talent points
-    if (curTalentPoints < (talentRank - curtalent_maxrank + 1))
+    if (curTalentPoints < neededPoints)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "LearnTalent failed: not enough talent points, talentId=%u, have=%u, need=%u", talentId, curTalentPoints, neededPoints);
         return false;
+    }
 
     // Check if it requires another talent
     if (talentInfo->DependsOn > 0)
@@ -20762,13 +20784,19 @@ bool Player::LearnTalent(uint32 talentId, uint32 talentRank)
             }
 
             if (!hasEnoughRank)
+            {
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "LearnTalent failed: dependency rank not met, talentId=%u, dependsOn=%u, dependsOnRank=%u", talentId, talentInfo->DependsOn, talentInfo->DependsOnRank);
                 return false;
+            }
         }
     }
 
     // Check if it requires spell
     if (talentInfo->DependsOnSpell && !HasSpell(talentInfo->DependsOnSpell))
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "LearnTalent failed: required spell not learned, talentId=%u, dependsOnSpell=%u", talentId, talentInfo->DependsOnSpell);
         return false;
+    }
 
     // Find out how many points we have in this field
     uint32 spentPoints = 0;
@@ -20798,27 +20826,150 @@ bool Player::LearnTalent(uint32 talentId, uint32 talentRank)
         }
     }
 
+    uint32 requiredSpentPoints = talentInfo->Row * (uint32)MAX_TALENT_RANK;
+
     // not have required min points spent in talent tree
-    if (spentPoints < (talentInfo->Row * MAX_TALENT_RANK))
+    if (spentPoints < requiredSpentPoints)
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "LearnTalent failed: not enough points spent in talent tab, talentId=%u, tab=%u, spent=%u, required=%u", talentId, tTab, spentPoints, requiredSpentPoints);
         return false;
+    }
 
     // spell not set in talent.dbc
     uint32 spellid = talentInfo->RankID[talentRank];
     if (spellid == 0)
     {
         sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Talent.dbc have for talent: %u Rank: %u spell id = 0", talentId, talentRank);
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "LearnTalent failed: spell id is 0 in talent.dbc, talentId=%u, rank=%u", talentId, talentRank);
         return false;
     }
 
     // already known
     if (HasSpell(spellid))
+    {
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "LearnTalent failed: spell already known, talentId=%u, rank=%u, spellid=%u", talentId, talentRank, spellid);
         return false;
+    }
 
     // learn! (other talent ranks will unlearned at learning)
     LearnSpell(spellid, false, true);
     sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "TalentID: %u Rank: %u Spell: %u\n", talentId, talentRank, spellid);
     return true;
 }
+// bool Player::LearnTalent(uint32 talentId, uint32 talentRank)
+// {
+//     uint32 curTalentPoints = GetFreeTalentPoints();
+
+//     if (curTalentPoints == 0)
+//         return false;
+
+//     if (talentRank >= MAX_TALENT_RANK)
+//         return false;
+
+//     TalentEntry const* talentInfo = sTalentStore.LookupEntry(talentId);
+
+//     if (!talentInfo)
+//         return false;
+
+//     TalentTabEntry const* talentTabInfo = sTalentTabStore.LookupEntry(talentInfo->TalentTab);
+
+//     if (!talentTabInfo)
+//         return false;
+
+//     // prevent learn talent for different class (cheating)
+//     if ((GetClassMask() & talentTabInfo->ClassMask) == 0)
+//         return false;
+
+//     // find current max talent rank
+//     uint32 curtalent_maxrank = 0;
+//     for (int32 k = MAX_TALENT_RANK - 1; k > -1; --k)
+//     {
+//         if (talentInfo->RankID[k] && HasSpell(talentInfo->RankID[k]))
+//         {
+//             curtalent_maxrank = k + 1;
+//             break;
+//         }
+//     }
+
+//     // we already have same or higher talent rank learned
+//     if (curtalent_maxrank >= (talentRank + 1))
+//         return false;
+
+//     // check if we have enough talent points
+//     if (curTalentPoints < (talentRank - curtalent_maxrank + 1))
+//         return false;
+
+//     // Check if it requires another talent
+//     if (talentInfo->DependsOn > 0)
+//     {
+//         if (TalentEntry const* depTalentInfo = sTalentStore.LookupEntry(talentInfo->DependsOn))
+//         {
+//             bool hasEnoughRank = false;
+//             for (int i = talentInfo->DependsOnRank; i < MAX_TALENT_RANK; ++i)
+//             {
+//                 if (depTalentInfo->RankID[i] != 0)
+//                     if (HasSpell(depTalentInfo->RankID[i]))
+//                         hasEnoughRank = true;
+//             }
+
+//             if (!hasEnoughRank)
+//                 return false;
+//         }
+//     }
+
+//     // Check if it requires spell
+//     if (talentInfo->DependsOnSpell && !HasSpell(talentInfo->DependsOnSpell))
+//         return false;
+
+//     // Find out how many points we have in this field
+//     uint32 spentPoints = 0;
+
+//     uint32 tTab = talentInfo->TalentTab;
+//     if (talentInfo->Row > 0)
+//     {
+//         uint32 numRows = sTalentStore.GetNumRows();
+//         for (uint32 i = 0; i < numRows; ++i)          // Loop through all talents.
+//         {
+//             // Someday, someone needs to revamp
+//             TalentEntry const* tmpTalent = sTalentStore.LookupEntry(i);
+//             if (tmpTalent)                                  // the way talents are tracked
+//             {
+//                 if (tmpTalent->TalentTab == tTab)
+//                 {
+//                     for (int j = 0; j < MAX_TALENT_RANK; ++j)
+//                     {
+//                         if (tmpTalent->RankID[j] != 0)
+//                         {
+//                             if (HasSpell(tmpTalent->RankID[j]))
+//                                 spentPoints += j + 1;
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+
+//     // not have required min points spent in talent tree
+//     if (spentPoints < (talentInfo->Row * MAX_TALENT_RANK))
+//         return false;
+
+//     // spell not set in talent.dbc
+//     uint32 spellid = talentInfo->RankID[talentRank];
+//     if (spellid == 0)
+//     {
+//         sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Talent.dbc have for talent: %u Rank: %u spell id = 0", talentId, talentRank);
+//         return false;
+//     }
+
+//     // already known
+//     if (HasSpell(spellid))
+//         return false;
+
+//     // learn! (other talent ranks will unlearned at learning)
+//     LearnSpell(spellid, false, true);
+//     sLog.Out(LOG_BASIC, LOG_LVL_DETAIL, "TalentID: %u Rank: %u Spell: %u\n", talentId, talentRank, spellid);
+//     return true;
+// }
 
 void Player::UpdateFallInformationIfNeed(MovementInfo const& minfo, uint16 opcode)
 {

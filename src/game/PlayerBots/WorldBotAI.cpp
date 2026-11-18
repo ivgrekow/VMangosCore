@@ -15,6 +15,7 @@
 */
 
 #include "WorldBotAI.h"
+#include "Log.h"
 
 enum WorldBotSpells
 {
@@ -254,6 +255,8 @@ bool WorldBotAI::DrinkAndEat()
             me->StopMoving();
             me->GetMotionMaster()->Clear(false, true);
             me->GetMotionMaster()->MoveIdle();
+            if (me->IsMounted())
+                me->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
         }
         if (SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(spellFoodGUID))
         {
@@ -270,6 +273,8 @@ bool WorldBotAI::DrinkAndEat()
             me->StopMoving();
             me->GetMotionMaster()->Clear(false, true);
             me->GetMotionMaster()->MoveIdle();
+            if (me->IsMounted())
+                me->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
         }
         if (SpellEntry const* pSpellEntry = sSpellMgr.GetSpellEntry(spellDrinkGUID))
         {
@@ -370,8 +375,8 @@ bool WorldBotAI::CanUseCrowdControl(SpellEntry const* pSpellEntry, Unit* pTarget
     if (IsInDuel())
         return true;
 
-    if (pSpellEntry->HasAuraInterruptFlag(AURA_INTERRUPT_DAMAGE_CANCELS) &&
-        AreOthersOnSameTarget(pTarget->GetObjectGuid()))
+    if (pSpellEntry->HasAuraInterruptFlag(AURA_INTERRUPT_DAMAGE_CANCELS) && (pTarget->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE) ||
+        AreOthersOnSameTarget(pTarget->GetObjectGuid())))
         return false;
 
     if (pSpellEntry->HasSingleTargetAura())
@@ -709,16 +714,6 @@ void WorldBotAI::UpdateAI(uint32 const diff)
         return;
     }
 
-    if (m_resetSpellData)
-    {
-        ResetSpellData();
-        PopulateSpellData();
-        m_resetSpellData = false;
-    }
-
-    
-    
-
     if (me->GetDeathState() == CORPSE)
     {
         if (!m_deathAccepted){
@@ -810,19 +805,11 @@ void WorldBotAI::UpdateAI(uint32 const diff)
         return;
     }
 
-    if (me->IsSwimming()){
-        me->UpdateSpeed(MOVE_SWIM, false);
-    }
-    else
-        me->UpdateSpeed(MOVE_RUN, false);
-
-    
-
     if (me->GetTargetGuid() == me->GetObjectGuid())
         me->ClearTarget();
 
-    // Ratchet, Gadgetzan, Everlook, Booty Bay, Moonglade, Light's Hope, Cenarion Hold
-    std::set<uint32> neutralAreas {392, 976, 2255, 35, 493, 2268, 3425};
+    // Ratchet, Gadgetzan, Everlook, Booty Bay, Moonglade, Light's Hope, Cenarion Hold, Thorium Point
+    std::set<uint32> neutralAreas {392, 976, 2255, 35, 493, 2268, 3425, 1446};
     Unit* pVictim = me->GetVictim();
 
     if (m_primaryTarget && (!m_primaryTarget->IsWithinDist(me, VISIBILITY_DISTANCE_NORMAL) || !IsValidHostileTarget(m_primaryTarget)))
@@ -883,11 +870,6 @@ void WorldBotAI::UpdateAI(uint32 const diff)
     }
 
     if (m_primaryTarget){
-        // if (pVictim->GetObjectGuid() != me->GetTargetGuid())
-        //     me->SetTargetGuid(pVictim->GetObjectGuid());
-
-        
-
         if (!me->HasInArc(m_primaryTarget, 2 * M_PI_F / 3) && !me->IsMoving()){
             me->SetInFront(m_primaryTarget);
             me->SendMovementPacket(MSG_MOVE_SET_FACING, false);
@@ -921,7 +903,7 @@ void WorldBotAI::UpdateAI(uint32 const diff)
     else
         m_leaderGuid = pLeader->GetObjectGuid();
     
-    if (!pVictim){
+    if (!pVictim && !me->GetGroup()){
         std::list<Unit*> enemies;
         std::list<Unit*> targets;
         me->GetEnemyListInRadiusAround(me, 35.0f, enemies);
@@ -1013,11 +995,11 @@ void WorldBotAI::UpdateAI(uint32 const diff)
 
         if (me->IsWithinDist3d(pLeader->GetPosition(), VISIBILITY_DISTANCE_NORMAL)){
             if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != FOLLOW_MOTION_TYPE)
-                me->GetMotionMaster()->MoveFollow(pLeader, frand(5.0f, 8.0f), frand(-M_PI_F, 0.0f));
+                me->GetMotionMaster()->MoveFollow(pLeader, frand(5.0f, 8.0f), frand(-M_PI_F/2, -3*M_PI_F/2));
             
             if (!m_travelNodes.empty())
                 ClearTravelData(true);
-            return;
+            // return;
         }
         else if (m_travelNodes.empty()){
             m_targetPos = pLeader->GetPosition();
@@ -1032,213 +1014,13 @@ void WorldBotAI::UpdateAI(uint32 const diff)
             // m_currentNodeIndex = 0;
             return;
         }
+
+        Unit* pVictim = SelectPartyAttackTarget();
+        if (pVictim && IsValidHostileTarget(pVictim))
+            AttackStart(pVictim);
     }
 
-    if (m_travelNodes.empty()){
-        if (m_targetPos.x == 0.0f && m_targetPos.y == 0.0f && m_targetPos.z == 0.0f){
-            if (me->GetGroup())
-                return;
-            // std::vector<TravelNode> possibleNodes;
-            // for (const auto& link: sPlayerBotMgr.GetTravelNodeLinks()){
-            //     int diff = std::abs((int)(me->GetLevel() - link.max_creature0));
-            //     const TravelNode& node = sPlayerBotMgr.GetTravelNode(link.to_node_id);
-            //     if (diff <= 3 && me->GetMapId() == node.map_id)
-            //         possibleNodes.push_back(node);
-            // }
-            // if (possibleNodes.empty()){
-            //     botEntry->requestRemoval = true;
-            //     sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "___ no possible areas found.");
-            //     return;
-            // }
-            // const TravelNode& node = SelectRandomContainerElement(possibleNodes);
-            const TravelNode& node = sPlayerBotMgr.GetTravelNode(SelectRandomContainerElement(m_safeTravelPoints));
-            m_targetPos = Position(node.x, node.y, node.z, 0.0f);
-            m_travelNodes = sPlayerBotMgr.FindAStarPath(me->GetTeam(), me->GetMapId(), me->GetPosition(), node.map_id, m_targetPos, true, true, true, m_level);
-            if (m_travelNodes.empty()){
-                if (m_safeSpawnNodes.empty()){
-                    botEntry->requestRemoval = true;
-                    sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : can't get any safe spawn node.");
-                    return;
-                }
-                const TravelNode& spawnNode = sPlayerBotMgr.GetTravelNode(SelectRandomContainerElement(m_safeSpawnNodes));
-                me->TeleportTo(spawnNode.map_id, spawnNode.x, spawnNode.y, spawnNode.z, frand(0.0, 6.28f));
-                m_targetPos = Position();
-                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::UpdateAI : Bot \"%s\" has been teleported to safe node.", me->GetName());
-                return;
-            }
-            // m_currentNodeIndex = 0;
-            // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ Found path:\n");
-            // for (auto id: m_travelNodes){
-            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "-> %d, %s", id, (sPlayerBotMgr.GetTravelNode(id)).name.c_str());
-            // }
-        }
-        else if (me->GetDistance3dToCenter(m_targetPos) > 200.0f){
-            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : m_targetPos is too far away (> 200.0f).");
-            m_targetPos = Position();
-        }
-        else if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE)
-            me->GetMotionMaster()->MovePoint(0, m_targetPos.x, m_targetPos.y, m_targetPos.z, MOVE_PATHFINDING|MOVE_EXCLUDE_STEEP_SLOPES);
-        return;
-    }
-    else if (m_currentNodeIndex < m_travelNodes.size()-1){
-        int32 pathStep = 4;
-        const TravelNode& node = sPlayerBotMgr.GetTravelNode(m_travelNodes[m_currentNodeIndex]);
-        const TravelNode& to_node = sPlayerBotMgr.GetTravelNode(m_travelNodes[m_currentNodeIndex+1]);
-        const TravelNodeLink& link = sPlayerBotMgr.GetTravelNodeLink(node.id, to_node.id);
-        if (link.type == PATH_TYPE_WALK){
-            if (m_travelNodePath.empty()){
-                m_travelNodePath = sPlayerBotMgr.GetTravelNodePath(node.id, to_node.id);
-                if (m_travelNodePath.empty()){
-                    sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : can't load travel node paths with node #%d and to_node #%d.", node.id, to_node.id);
-                    ClearTravelData(true);
-                    return;
-                }
-                m_currentPathIndex = 0;
-            }
-            if (m_currentPathIndex >= m_travelNodePath.size()){
-                ClearTravelData();
-                m_currentNodeIndex++;
-                // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "__ incrementing NODE INDEX.");
-                return;
-            }
-            TravelNodePath& pathNode = m_travelNodePath[m_currentPathIndex];
-            bool flag = false;
-            Position pathPos {pathNode.x, pathNode.y, pathNode.z, 0.0f};
-            float dist = me->GetDistance3dToCenter(pathPos);
-            if (dist > 200.0f){
-                ClearTravelData(true);
-                return;
-            }
-            else if (dist > 5.0f){
-                if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE)
-                    me->GetMotionMaster()->MovePoint(0, pathPos.x, pathPos.y, pathPos.z, MOVE_PATHFINDING|MOVE_EXCLUDE_STEEP_SLOPES);
-            }
-            else{
-                if (m_currentPathIndex + pathStep > m_travelNodePath.size() && m_currentPathIndex != (m_travelNodePath.size() - 1))
-                    m_currentPathIndex = m_travelNodePath.size() - 1;
-                else
-                    m_currentPathIndex += pathStep;
-                // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "__ incrementing PATH INDEX BY 4.");
-            }
-        }
-        else if (link.type == PATH_TYPE_FLIGHTPATH){
-            const TravelNode& node = sPlayerBotMgr.GetTravelNode(m_travelNodes[m_currentNodeIndex]);
-            if (me->GetDistance3dToCenter(Position(node.x, node.y, node.z, 0.0f)) > 5.0f){
-                if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE)
-                    me->GetMotionMaster()->MovePoint(0, node.x, node.y, node.z, MOVE_PATHFINDING|MOVE_EXCLUDE_STEEP_SLOPES);
-                return;
-            }
-            const TaxiPathEntry* taxiEntry = sTaxiPathStore.LookupEntry(link.object);
-            if (!taxiEntry){
-                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : error getting taxiEntry with id #%d.", link.object);
-                ClearTravelData(true);
-            }
-
-            const TaxiFlightNodeInfo& flightInfo = sPlayerBotMgr.GetTaxiFlightNodeInfoById(taxiEntry->from);
-            uint32 ridingCreatureTemplateId = 0;
-            if (flightInfo.mount_creature_id1)
-                ridingCreatureTemplateId = flightInfo.mount_creature_id1;
-            else if (flightInfo.mount_creature_id2)
-                ridingCreatureTemplateId = flightInfo.mount_creature_id2;
-            
-            uint32 displayId = 0;
-            for (auto itr = sObjectMgr.GetCreatureInfoMap().begin(); itr != sObjectMgr.GetCreatureInfoMap().end(); ++itr){
-                if (ridingCreatureTemplateId == itr->second->entry){
-                    displayId = itr->second->display_id[0];
-                    break;
-                }
-            }
-            if (me->GetShapeshiftForm() != FORM_NONE)
-            {
-                me->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
-                return;
-            }
-            me->GetMotionMaster()->MoveTaxiFlight(link.object, 0);
-            me->Mount(displayId);
-            
-            ClearTravelData();
-            m_currentNodeIndex++;
-            if (link.to_node_id == 1567 && me->GetTeam() == HORDE)
-                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "_____ Flying to 1567. link.object = %d, taxi entry id, node, to_node: %d, %d, %d.", link.object, taxiEntry->ID, taxiEntry->from, taxiEntry->to);
-        }
-        else if (link.type == PATH_TYPE_AREATRIGGER){
-            me->GetMotionMaster()->Clear(false, true);
-            me->GetMotionMaster()->MoveIdle();
-            const AreaTriggerTeleport* at = sObjectMgr.GetAreaTriggerTeleport(link.object);
-            if (!at){
-                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : can't get teleport trigger with id #%d.", link.object);
-                botEntry->requestRemoval = true;
-                return;
-            }
-            me->TeleportTo(at->destination.mapId, at->destination.x, at->destination.y, at->destination.z, at->destination.o);
-            ClearTravelData();
-            m_currentNodeIndex++;
-        }
-        else if (link.type == PATH_TYPE_TRANSPORT){
-            // Map* map = me->GetMap();
-            // if (!map){
-            //     sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : what the heck?? Where is my current map?!");
-            //     botEntry->requestRemoval = true;
-            //     return;
-            // }
-            for(m_currentNodeIndex; m_currentNodeIndex < m_travelNodes.size()-1; ++m_currentNodeIndex){
-                const TravelNode& node = sPlayerBotMgr.GetTravelNode(m_travelNodes[m_currentNodeIndex]);
-                ++m_currentNodeIndex;
-                const TravelNode& to_node = sPlayerBotMgr.GetTravelNode(m_travelNodes[m_currentNodeIndex]);
-                const TravelNodeLink& link = sPlayerBotMgr.GetTravelNodeLink(node.id, to_node.id);
-                if (link.type == PATH_TYPE_WALK)
-                    break;
-            }
-            // if (m_currentNodeIndex >= m_travelNodes.size()){
-            //     botEntry->requestRemoval = true;
-            //     sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : all travel nodes are of PATH_TYPE_TRANSPORT???");
-            //     return;
-            // }
-            if (m_currentNodeIndex >= m_travelNodes.size())
-                m_currentNodeIndex -= 1;
-            const TravelNode& node = sPlayerBotMgr.GetTravelNode(m_travelNodes[m_currentNodeIndex]);
-            me->TeleportTo(node.map_id, node.x, node.y, node.z, me->GetOrientation());
-            m_currentNodeIndex++;
-            // const TransportTemplate* tInfo = sTransportMgr.GetTransportTemplate(link.object);
-            // if (!tInfo){
-            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Can't get transport template.");
-            //     m_updateTimer.Reset(10000);
-            //     return;
-            // }
-            // KeyFrameVec::const_iterator frameItr;
-            // for (frameItr = tInfo->keyFrames.cbegin(); frameItr != tInfo->keyFrames.cend(); ++frameItr){
-            //     if ((*frameItr).Node->mapid == map->GetId())
-            //         break;
-            // }
-            // if (frameItr != tInfo->keyFrames.cend()){
-            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "__ The ship is on the same map!");
-            //     m_updateTimer.Reset(15000);
-            //     return;
-            // }
-            // ObjectGuid guid = sObjectMgr.GetFullTransportGuidFromLowGuid(link.object);
-            
-            // GenericTransport* pTransport = map->GetTransport(guid);
-            // if (!pTransport)
-            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Can't get transport.");
-            // else
-            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, " ___ GOT TRANSPORT guid %d.", pTransport->GetGUIDLow());
-            // if (pTransport){
-            //     if (me->GetTransport() != pTransport){
-            //         pTransport->AddPassenger(me);
-            //     }
-            //     if (me->GetMotionMaster()->GetCurrentMovementGeneratorType()){
-            //         me->GetMotionMaster()->Clear(false, true);
-            //         me->GetMotionMaster()->MoveIdle();
-            //     }
-            //     pTransport->UpdatePassengerPosition(me);
-            //     return;
-            // }
-            // m_updateTimer.Reset(15000);
-        }
-    }
-    else
-        ClearTravelData(true);
-    
+    UpdateTravelAI();
 }
 
 
@@ -1376,8 +1158,9 @@ void WorldBotAI::UpdateInCombatAI()
             break;
     }
 
-    if (me->GetVictim())
-        UseTrinketEffects();
+    // maybe implement trinkets later...
+    // if (me->GetVictim())
+    //     UseTrinketEffects();
 }
 
 bool WorldBotAI::CheckForDispelTargets()
@@ -1596,14 +1379,14 @@ void WorldBotAI::UpdateInCombatAI_Paladin()
                 return;
         }
 
-        if (m_spells.paladin.pTurnEvil &&
+        if (m_spells.paladin.pTurnUndead &&
             m_role != ROLE_TANK)
         {
             Unit* pAttacker = SelectAttackerDifferentFrom(me->GetVictim());
             if (pAttacker && pAttacker->GetCreatureType() == CREATURE_TYPE_UNDEAD &&
-                CanTryToCastSpell(pAttacker, m_spells.paladin.pTurnEvil))
+                CanTryToCastSpell(pAttacker, m_spells.paladin.pTurnUndead))
             {
-                if (DoCastSpell(pAttacker, m_spells.paladin.pTurnEvil) == SPELL_CAST_OK)
+                if (DoCastSpell(pAttacker, m_spells.paladin.pTurnUndead) == SPELL_CAST_OK)
                     return;
             }
         }
@@ -3877,63 +3660,78 @@ void WorldBotAI::SummonRandomPet(){
 void WorldBotAI::Initialize() {
     // AddToPlayerGroup();
 
-    if (m_race && m_class) // temporary character
-    {
-        if (m_level && m_level != me->GetLevel())
-        {
-            me->GiveLevel(m_level);
-            me->InitTalentForLevel();
-            me->SetUInt32Value(PLAYER_XP, 0);
-        }
+    // if (m_race && m_class) // temporary character
+    // {
+    //     if (m_level && m_level != me->GetLevel())
+    //     {
+    //         me->GiveLevel(m_level);
+    //         me->InitTalentForLevel();
+    //         me->SetUInt32Value(PLAYER_XP, 0);
+    //     }
 
-        if (!m_cloneGuid.IsEmpty())
-        {
-            CloneFromPlayer(sObjectAccessor.FindPlayer(m_cloneGuid));
-            AutoAssignRole();
-        }
-        else
-        {
-            LearnPremadeSpecForClass();
+    //     if (!m_cloneGuid.IsEmpty())
+    //     {
+    //         CloneFromPlayer(sObjectAccessor.FindPlayer(m_cloneGuid));
+    //         AutoAssignRole();
+    //     }
+    //     else
+    //     {
+    //         LearnPremadeSpecForClass();
 
-            if (m_role == ROLE_INVALID)
-                AutoAssignRole();
+    //         if (m_role == ROLE_INVALID)
+    //             AutoAssignRole();
 
-            AutoEquipGear(sWorld.getConfig(CONFIG_UINT32_PARTY_BOT_AUTO_EQUIP));
+    //         AutoEquipGear(sWorld.getConfig(CONFIG_UINT32_PARTY_BOT_AUTO_EQUIP));
 
-            // fix client bug causing some item slots to not be visible
-            // if (Player* pLeader = GetPartyLeader())
-            // {
-            //     me->SetVisibility(VISIBILITY_OFF);
-            //     pLeader->UpdateVisibilityOf(pLeader, me);
-            //     me->SetVisibility(VISIBILITY_ON);
-            // }
-        }
-        me->UpdateSkillsToMaxSkillsForLevel();
-    }
-    else // loaded from db
-    {
-        if (m_role == ROLE_INVALID)
-            AutoAssignRole();
+    //         // fix client bug causing some item slots to not be visible
+    //         // if (Player* pLeader = GetPartyLeader())
+    //         // {
+    //         //     me->SetVisibility(VISIBILITY_OFF);
+    //         //     pLeader->UpdateVisibilityOf(pLeader, me);
+    //         //     me->SetVisibility(VISIBILITY_ON);
+    //         // }
+    //     }
+    //     me->UpdateSkillsToMaxSkillsForLevel();
+    // }
+    // else // loaded from db
+    // {
+    //     if (m_role == ROLE_INVALID)
+    //         AutoAssignRole();
 
-        if (me->IsGameMaster())
-            me->SetGameMaster(false);
+    //     if (me->IsGameMaster())
+    //         me->SetGameMaster(false);
 
-        me->TeleportTo(m_mapId, m_x, m_y, m_z, m_o);
-    }
+    //     me->TeleportTo(m_mapId, m_x, m_y, m_z, m_o);
+    // }
 
-    ResetSpellData();
-    PopulateSpellData();
-    AddAllSpellReagents();
-    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING);
-    // SummonPetIfNeeded();
-    SummonRandomPet();
-    me->SetHealthPercent(100.0f);
-    me->SetPowerPercent(me->GetPowerType(), 100.0f);
+    // ResetSpellData();
+    // PopulateSpellData();
+    // AddAllSpellReagents();
+    // me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING);
+    // SummonRandomPet();
+    // me->SetHealthPercent(100.0f);
+    // me->SetPowerPercent(me->GetPowerType(), 100.0f);
 
-    uint32 newzone, newarea;
-    me->GetZoneAndAreaId(newzone, newarea);
-    me->UpdateZone(newzone, newarea);
+    // uint32 newzone, newarea;
+    // me->GetZoneAndAreaId(newzone, newarea);
+    // me->UpdateZone(newzone, newarea);
     // m_safeSpawnNodes = sPlayerBotMgr.GetSafeSpawnNodes(me->GetTeam(), m_level);
+    // me->SetVisibility(VISIBILITY_OFF);
+    // me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING);
+    me->SetVisibility(VISIBILITY_OFF);
+    if (m_level)
+        me->GiveLevel(m_level);
+    InitTalentsByRandomSpec();
+    // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::UpdateAI : Talents are initialized.");
+    PopulateSpellData();
+    // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::UpdateAI : Spells are populated.");
+    me->SetUInt32Value(PLAYER_XP, 0);
+    GenerateGear();
+    // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::UpdateAI : Gear has been generated.");
+    me->UpdateSkillsToMaxSkillsForLevel();
+    GenerateMounts();
+    // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::UpdateAI : Mounts are generated.");
+
     if (m_safeSpawnNodes.empty()){
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ my safe spawn nodes dont exist. Calling sPlayerBotMgr...");
         m_safeSpawnNodes = sPlayerBotMgr.GetSafeSpawnNodes(me->GetTeam(), m_level);
@@ -3944,6 +3742,11 @@ void WorldBotAI::Initialize() {
     }
     PopulateProfessionSpells();
 
+    me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING);
+    me->SetVisibility(VISIBILITY_ON);
+    uint32 newzone, newarea;
+    me->GetZoneAndAreaId(newzone, newarea);
+    me->UpdateZone(newzone, newarea);
     m_debugTimer.Reset(180000);
     m_initialized = true;
     return;
@@ -4188,15 +3991,14 @@ void WorldBotAI::AddAllProfessionSpellTotems(uint32 id) {
     }
 }
 
-std::vector<const SpellEntry*> WorldBotAI::GetProfessionSpellsFilterByRegex(std::string filter) const {
+std::vector<const SpellEntry*> WorldBotAI::GetProfessionSpellsByFilter(std::string filter) const {
     std::vector<const SpellEntry*> result;
 
     if (filter.empty())
         return result;
 
-    std::regex pattern {filter};
     for (auto spellEntry: m_professionBook){
-        if (std::regex_search(spellEntry->SpellName[0], pattern))
+        if (spellEntry->SpellName[0].find(filter) != std::string::npos)
             result.push_back(spellEntry);
     }
 
@@ -4450,6 +4252,13 @@ void WorldBotAI::UpdateInCombatPets(){
                     return;
                 }
 
+                if (IsMeleeDamageClass(pet_victim->GetClass()) && pet_victim->IsWithinDist(me, 20.0f)){
+                    if (CanUseCrowdControl(m_spells.warlock.pSeduction, pet_victim) && CanPetTryToCastSpell(pet_victim, m_spells.warlock.pSeduction)){
+                        pet->CastSpell(pet_victim, m_spells.warlock.pSeduction, false);
+                        return;
+                    }
+                }
+                
                 if (Unit* pTarget = SelectAttackerDifferentFrom(pet_victim)){
                     if (CanUseCrowdControl(m_spells.warlock.pSeduction, pTarget) && CanPetTryToCastSpell(pTarget, m_spells.warlock.pSeduction)){
                         pet->CastSpell(pTarget, m_spells.warlock.pSeduction, false);
@@ -4650,4 +4459,1645 @@ bool WorldBotAI::CanPetTryToCastSpell(Unit* pTarget, const SpellEntry* pSpellEnt
     }
 
     return true;
+}
+
+void WorldBotAI::UpdateTravelAI() {
+    if (m_travelNodes.empty()){
+        if (m_targetPos.x == 0.0f && m_targetPos.y == 0.0f && m_targetPos.z == 0.0f){
+            if (me->GetGroup())
+                return;
+            
+            const TravelNode& node = sPlayerBotMgr.GetTravelNode(SelectRandomContainerElement(m_safeTravelPoints));
+            m_targetPos = Position(node.x, node.y, node.z, 0.0f);
+            m_travelNodes = sPlayerBotMgr.FindAStarPath(me->GetTeam(), me->GetMapId(), me->GetPosition(), node.map_id, m_targetPos, true, true, true, m_level);
+            if (m_travelNodes.empty()){
+                if (m_safeSpawnNodes.empty()){
+                    botEntry->requestRemoval = true;
+                    sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : can't get any safe spawn node.");
+                    return;
+                }
+                const TravelNode& spawnNode = sPlayerBotMgr.GetTravelNode(SelectRandomContainerElement(m_safeSpawnNodes));
+                me->TeleportTo(spawnNode.map_id, spawnNode.x, spawnNode.y, spawnNode.z, frand(0.0, 6.28f));
+                m_targetPos = Position();
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::UpdateAI : Bot \"%s\" has been teleported to safe node.", me->GetName());
+                return;
+            }
+            // m_currentNodeIndex = 0;
+            // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ Found path:\n");
+            // for (auto id: m_travelNodes){
+            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "-> %d, %s", id, (sPlayerBotMgr.GetTravelNode(id)).name.c_str());
+            // }
+        }
+        else if (me->GetDistance3dToCenter(m_targetPos) > 200.0f){
+            sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : m_targetPos is too far away (> 200.0f).");
+            m_targetPos = Position();
+        }
+        else if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE)
+            me->GetMotionMaster()->MovePoint(0, m_targetPos.x, m_targetPos.y, m_targetPos.z, MOVE_PATHFINDING|MOVE_EXCLUDE_STEEP_SLOPES);
+        return;
+    }
+    else if (m_currentNodeIndex < m_travelNodes.size()-1){
+        int32 pathStep = 4;
+        const TravelNode& node = sPlayerBotMgr.GetTravelNode(m_travelNodes[m_currentNodeIndex]);
+        const TravelNode& to_node = sPlayerBotMgr.GetTravelNode(m_travelNodes[m_currentNodeIndex+1]);
+        const TravelNodeLink& link = sPlayerBotMgr.GetTravelNodeLink(node.id, to_node.id);
+        if (link.type == PATH_TYPE_WALK){
+            if (m_travelNodePath.empty()){
+                m_travelNodePath = sPlayerBotMgr.GetTravelNodePath(node.id, to_node.id);
+                if (m_travelNodePath.empty()){
+                    sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : can't load travel node paths with node #%d and to_node #%d.", node.id, to_node.id);
+                    ClearTravelData(true);
+                    return;
+                }
+                m_currentPathIndex = 0;
+            }
+            if (m_currentPathIndex >= m_travelNodePath.size()){
+                ClearTravelData();
+                m_currentNodeIndex++;
+                // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "__ incrementing NODE INDEX.");
+                return;
+            }
+            TravelNodePath& pathNode = m_travelNodePath[m_currentPathIndex];
+            bool flag = false;
+            Position pathPos {pathNode.x, pathNode.y, pathNode.z, 0.0f};
+            float dist = me->GetDistance3dToCenter(pathPos);
+            if (dist > 200.0f){
+                ClearTravelData(true);
+                return;
+            }
+            else if (dist > 5.0f){
+                if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE)
+                    me->GetMotionMaster()->MovePoint(0, pathPos.x, pathPos.y, pathPos.z, MOVE_PATHFINDING|MOVE_EXCLUDE_STEEP_SLOPES);
+            }
+            else{
+                if (m_currentPathIndex + pathStep > m_travelNodePath.size() && m_currentPathIndex != (m_travelNodePath.size() - 1))
+                    m_currentPathIndex = m_travelNodePath.size() - 1;
+                else
+                    m_currentPathIndex += pathStep;
+                // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "__ incrementing PATH INDEX BY 4.");
+            }
+        }
+        else if (link.type == PATH_TYPE_FLIGHTPATH){
+            const TravelNode& node = sPlayerBotMgr.GetTravelNode(m_travelNodes[m_currentNodeIndex]);
+            if (me->GetDistance3dToCenter(Position(node.x, node.y, node.z, 0.0f)) > 5.0f){
+                if (me->GetMotionMaster()->GetCurrentMovementGeneratorType() != POINT_MOTION_TYPE)
+                    me->GetMotionMaster()->MovePoint(0, node.x, node.y, node.z, MOVE_PATHFINDING|MOVE_EXCLUDE_STEEP_SLOPES);
+                return;
+            }
+            const TaxiPathEntry* taxiEntry = sTaxiPathStore.LookupEntry(link.object);
+            if (!taxiEntry){
+                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : error getting taxiEntry with id #%d.", link.object);
+                ClearTravelData(true);
+            }
+
+            const TaxiFlightNodeInfo& flightInfo = sPlayerBotMgr.GetTaxiFlightNodeInfoById(taxiEntry->from);
+            uint32 ridingCreatureTemplateId = 0;
+            if (flightInfo.mount_creature_id1)
+                ridingCreatureTemplateId = flightInfo.mount_creature_id1;
+            else if (flightInfo.mount_creature_id2)
+                ridingCreatureTemplateId = flightInfo.mount_creature_id2;
+            
+            uint32 displayId = 0;
+            for (auto itr = sObjectMgr.GetCreatureInfoMap().begin(); itr != sObjectMgr.GetCreatureInfoMap().end(); ++itr){
+                if (ridingCreatureTemplateId == itr->second->entry){
+                    displayId = itr->second->display_id[0];
+                    break;
+                }
+            }
+            if (me->GetShapeshiftForm() != FORM_NONE)
+            {
+                me->RemoveSpellsCausingAura(SPELL_AURA_MOD_SHAPESHIFT);
+                return;
+            }
+            me->GetMotionMaster()->MoveTaxiFlight(link.object, 0);
+            me->Mount(displayId);
+            
+            ClearTravelData();
+            m_currentNodeIndex++;
+            if (link.to_node_id == 1567 && me->GetTeam() == HORDE)
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "_____ Flying to 1567. link.object = %d, taxi entry id, node, to_node: %d, %d, %d.", link.object, taxiEntry->ID, taxiEntry->from, taxiEntry->to);
+        }
+        else if (link.type == PATH_TYPE_AREATRIGGER){
+            me->GetMotionMaster()->Clear(false, true);
+            me->GetMotionMaster()->MoveIdle();
+            const AreaTriggerTeleport* at = sObjectMgr.GetAreaTriggerTeleport(link.object);
+            if (!at){
+                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : can't get teleport trigger with id #%d.", link.object);
+                botEntry->requestRemoval = true;
+                return;
+            }
+            me->TeleportTo(at->destination.mapId, at->destination.x, at->destination.y, at->destination.z, at->destination.o);
+            ClearTravelData();
+            m_currentNodeIndex++;
+        }
+        else if (link.type == PATH_TYPE_TRANSPORT){
+            // Map* map = me->GetMap();
+            // if (!map){
+            //     sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : what the heck?? Where is my current map?!");
+            //     botEntry->requestRemoval = true;
+            //     return;
+            // }
+            for(m_currentNodeIndex; m_currentNodeIndex < m_travelNodes.size()-1; ++m_currentNodeIndex){
+                const TravelNode& node = sPlayerBotMgr.GetTravelNode(m_travelNodes[m_currentNodeIndex]);
+                ++m_currentNodeIndex;
+                const TravelNode& to_node = sPlayerBotMgr.GetTravelNode(m_travelNodes[m_currentNodeIndex]);
+                const TravelNodeLink& link = sPlayerBotMgr.GetTravelNodeLink(node.id, to_node.id);
+                if (link.type == PATH_TYPE_WALK)
+                    break;
+            }
+            // if (m_currentNodeIndex >= m_travelNodes.size()){
+            //     botEntry->requestRemoval = true;
+            //     sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "[WorldBotAI]::UpdateAI : all travel nodes are of PATH_TYPE_TRANSPORT???");
+            //     return;
+            // }
+            if (m_currentNodeIndex >= m_travelNodes.size())
+                m_currentNodeIndex -= 1;
+            const TravelNode& node = sPlayerBotMgr.GetTravelNode(m_travelNodes[m_currentNodeIndex]);
+            me->TeleportTo(node.map_id, node.x, node.y, node.z, me->GetOrientation());
+            m_currentNodeIndex++;
+            // const TransportTemplate* tInfo = sTransportMgr.GetTransportTemplate(link.object);
+            // if (!tInfo){
+            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Can't get transport template.");
+            //     m_updateTimer.Reset(10000);
+            //     return;
+            // }
+            // KeyFrameVec::const_iterator frameItr;
+            // for (frameItr = tInfo->keyFrames.cbegin(); frameItr != tInfo->keyFrames.cend(); ++frameItr){
+            //     if ((*frameItr).Node->mapid == map->GetId())
+            //         break;
+            // }
+            // if (frameItr != tInfo->keyFrames.cend()){
+            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "__ The ship is on the same map!");
+            //     m_updateTimer.Reset(15000);
+            //     return;
+            // }
+            // ObjectGuid guid = sObjectMgr.GetFullTransportGuidFromLowGuid(link.object);
+            
+            // GenericTransport* pTransport = map->GetTransport(guid);
+            // if (!pTransport)
+            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Can't get transport.");
+            // else
+            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, " ___ GOT TRANSPORT guid %d.", pTransport->GetGUIDLow());
+            // if (pTransport){
+            //     if (me->GetTransport() != pTransport){
+            //         pTransport->AddPassenger(me);
+            //     }
+            //     if (me->GetMotionMaster()->GetCurrentMovementGeneratorType()){
+            //         me->GetMotionMaster()->Clear(false, true);
+            //         me->GetMotionMaster()->MoveIdle();
+            //     }
+            //     pTransport->UpdatePassengerPosition(me);
+            //     return;
+            // }
+            // m_updateTimer.Reset(15000);
+        }
+    }
+    else
+        ClearTravelData(true);
+}
+
+// generate and equip armor/weapon
+void WorldBotAI::GenerateGear(){\
+    std::map<uint32 /*slot*/, std::vector<ItemPrototype const*>> itemsPerSlot;
+    m_honorRank = urand(5, 18);
+    
+    for (auto const& itr: sObjectMgr.GetItemPrototypeMap()){
+        ItemPrototype const* pProto = &itr.second;
+
+        // Only items that have already been discovered by someone
+        if (!pProto->Discovered)
+            continue;
+
+        // Skip unobtainable items
+        if (pProto->HasExtraFlag(ITEM_EXTRA_NOT_OBTAINABLE))
+            continue;
+
+        // Only gear and weapons
+        if (pProto->Class != ITEM_CLASS_WEAPON && pProto->Class != ITEM_CLASS_ARMOR)
+            continue;
+
+        // No tabards and shirts
+        if (pProto->InventoryType == INVTYPE_TABARD || pProto->InventoryType == INVTYPE_BODY)
+            continue;
+
+        if (pProto->SourceQuestRaces && !(pProto->SourceQuestRaces & me->GetRaceMask()))
+            continue;
+
+        if (pProto->SourceQuestClasses && !(pProto->SourceQuestClasses & me->GetClassMask()))
+            continue;
+
+        if (me->GetLevel() - pProto->RequiredLevel > 10)
+            continue;
+        
+        if (me->GetLevel() < 60 && (pProto->ItemLevel - me->GetLevel()) > 5)
+            continue;
+        else if (me->GetLevel() == 60 && pProto->ItemLevel < 60)
+            continue;
+
+        if (me->CanUseItem(pProto, false) != EQUIP_ERR_OK)
+            continue;
+
+        if (pProto->RequiredHonorRank > m_honorRank)
+            continue;
+
+        if (pProto->RequiredReputationFaction && uint32(me->GetReputationRank(pProto->RequiredReputationFaction)) < pProto->RequiredReputationRank)
+            continue;
+
+        if (uint32 skill = pProto->GetProficiencySkill()){
+            if (me->GetClass() == CLASS_WARRIOR || me->GetClass() == CLASS_PALADIN){
+                if ((skill == SKILL_CLOTH && pProto->InventoryType != INVTYPE_CLOAK) || skill == SKILL_LEATHER)
+                    continue;
+                
+                if (me->GetLevel() >= 50 && skill == SKILL_MAIL)
+                    continue;
+            }
+        }
+
+        // skip irrelevant items
+        if (me->GetClass() == CLASS_WARRIOR){
+            if (pProto->InventoryType == INVTYPE_HOLDABLE)
+                continue;
+        }
+        else if (me->GetClass() == CLASS_ROGUE){
+            if ( (m_currentSpec.find("combat") != std::string::npos && me->GetLevel() >= 10 &&
+                pProto->Class == ITEM_CLASS_WEAPON && pProto->SubClass == ITEM_SUBCLASS_WEAPON_DAGGER) ||
+                (m_currentSpec.find("hemo") != std::string::npos && me->GetLevel() >= 30 && pProto->Class == ITEM_CLASS_WEAPON &&
+                pProto->SubClass == ITEM_SUBCLASS_WEAPON_DAGGER) ||
+                (m_currentSpec.find("assa") != std::string::npos && pProto->Class == ITEM_CLASS_WEAPON &&
+                (pProto->SubClass == ITEM_SUBCLASS_WEAPON_MACE || pProto->SubClass == ITEM_SUBCLASS_WEAPON_SWORD || pProto->SubClass == ITEM_SUBCLASS_WEAPON_FIST))
+            )
+                continue;
+        }
+        
+        // uint8 slots[4];
+        // pProto->GetAllowedEquipSlots(slots, me->GetClass(), me->CanDualWield());
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "Found item id %d, name \"%s\", inventory %d.", pProto->ItemId, pProto->Name1, pProto->InventoryType);
+        itemsPerSlot[pProto->InventoryType].push_back(pProto);
+    }
+    // for (int i=0; i < itemsPerSlot[INVTYPE_CHEST].size(); ++i)
+    //     sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "\tFound chest armor id %d, name \"%s\".", itemsPerSlot[INVTYPE_CHEST][i]->ItemId, itemsPerSlot[INVTYPE_CHEST][i]->Name1);
+    
+    std::vector<uint32> invSlots {
+        INVTYPE_HEAD,
+        INVTYPE_NECK,
+        INVTYPE_SHOULDERS,
+        INVTYPE_CHEST,
+        INVTYPE_WRISTS,
+        INVTYPE_HANDS,
+        INVTYPE_WAIST,
+        INVTYPE_LEGS,
+        INVTYPE_FEET,
+        INVTYPE_FINGER,
+        INVTYPE_CLOAK
+    };
+
+    for (auto invSlot: invSlots) {
+        std::sort(itemsPerSlot[invSlot].begin(), itemsPerSlot[invSlot].end(), [](const ItemPrototype* a, const ItemPrototype* b){
+            return a->ItemLevel < b->ItemLevel;
+        });
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : itemsPerSlot[%d].size = %d", invSlot, itemsPerSlot[invSlot].size());
+        GenerateInventorySlotItem(itemsPerSlot, invSlot, true);
+    }
+
+    // generate weapon
+    uint32 my_class = me->GetClass();
+    if (my_class == CLASS_WARRIOR){
+        invSlots = {
+            INVTYPE_SHIELD,
+            INVTYPE_2HWEAPON,
+            INVTYPE_RANGEDRIGHT,
+            INVTYPE_RANGED,
+            INVTYPE_WEAPON,
+            INVTYPE_WEAPONMAINHAND
+        };
+        for (auto invSlot: invSlots) {
+            std::sort(itemsPerSlot[invSlot].begin(), itemsPerSlot[invSlot].end(), [](const ItemPrototype* a, const ItemPrototype* b){
+                return a->ItemLevel < b->ItemLevel;
+            });
+            // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : itemsPerSlot[%d].size = %d", invSlot, itemsPerSlot[invSlot].size());
+        }
+
+        // uint32 coinChance = urand(0, 1);
+        // if (coinChance)
+        //     invSlots = {INVTYPE_RANGED, INVTYPE_RANGEDRIGHT};
+        // else
+        //     invSlots = {INVTYPE_RANGEDRIGHT, INVTYPE_RANGED};
+        invSlots = {INVTYPE_RANGED, INVTYPE_RANGEDRIGHT};
+        uint32 index;
+        while (!invSlots.empty()){
+            index = urand(0, invSlots.size() - 1);
+            if (GenerateInventorySlotItem(itemsPerSlot, invSlots[index], true))
+                break;
+            
+            invSlots.erase(invSlots.begin() + index);
+        }
+
+        // for (auto invSlot: invSlots)
+        //     if (GenerateInventorySlotItem(itemsPerSlot, invSlot, true))
+        //         break;
+
+        bool needToEquipShield = false;
+        bool needToEquipOneHand = false;
+        bool needToEquipTwoHand = false;
+
+        if (m_role == ROLE_TANK){
+            GenerateInventorySlotItem(itemsPerSlot, INVTYPE_SHIELD, true);
+            invSlots = {INVTYPE_WEAPONMAINHAND, INVTYPE_WEAPON};
+            while (!invSlots.empty()){
+                index = urand(0, invSlots.size() - 1); 
+                if (GenerateInventorySlotItem(itemsPerSlot, invSlots[index], true))
+                    break;
+                
+                invSlots.erase(invSlots.begin() + index);
+            }
+        }
+        else if (m_role == ROLE_MELEE_DPS){
+            // if (std::regex_search(m_currentSpec, std::regex("fury"))){
+            if (m_currentSpec.find("fury") != std::string::npos){
+                invSlots = {INVTYPE_WEAPONMAINHAND, INVTYPE_WEAPON};
+                while (!invSlots.empty()){
+                    index = urand(0, invSlots.size() - 1);
+                    if (GenerateInventorySlotItem(itemsPerSlot, invSlots[index], true))
+                        break;
+                    
+                    invSlots.erase(invSlots.begin() + index);
+                }
+                if (me->HasSpell(674))
+                    GenerateInventorySlotItem(itemsPerSlot, INVTYPE_WEAPON, true);
+            }
+            else if (m_currentSpec.find("arms") != std::string::npos){
+                GenerateInventorySlotItem(itemsPerSlot, INVTYPE_2HWEAPON, true);
+            }
+        }
+
+        // for (auto invSlot: invSlots){
+        //     GenerateInventorySlotItem(itemsPerSlot, invSlot, needToEquipOneHand);
+        //     if (needToEquipShield)
+        //         break;
+        // }
+    }
+    else if (my_class == CLASS_PALADIN){
+        invSlots = {
+            INVTYPE_SHIELD,
+            INVTYPE_2HWEAPON,
+            INVTYPE_RELIC,
+            INVTYPE_WEAPON,
+            INVTYPE_WEAPONMAINHAND
+        };
+        for (auto invSlot: invSlots) {
+            std::sort(itemsPerSlot[invSlot].begin(), itemsPerSlot[invSlot].end(), [](const ItemPrototype* a, const ItemPrototype* b){
+                return a->ItemLevel < b->ItemLevel;
+            });
+            // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : itemsPerSlot[%d].size = %d", invSlot, itemsPerSlot[invSlot].size());
+        }
+
+        GenerateInventorySlotItem(itemsPerSlot, INVTYPE_RELIC, true);
+
+        uint32 index;
+        if (m_role == ROLE_MELEE_DPS){
+            GenerateInventorySlotItem(itemsPerSlot, INVTYPE_2HWEAPON, true);
+        }
+        else if (m_role == ROLE_HEALER){
+            GenerateInventorySlotItem(itemsPerSlot, INVTYPE_SHIELD, true);
+            invSlots = {INVTYPE_WEAPONMAINHAND, INVTYPE_WEAPON};
+            while (!invSlots.empty()){
+                index = urand(0, invSlots.size() - 1);
+                if (GenerateInventorySlotItem(itemsPerSlot, invSlots[index], true))
+                    break;
+                
+                invSlots.erase(invSlots.begin() + index);
+            }
+        }
+    }
+    else if (my_class == CLASS_HUNTER){
+        invSlots = {
+            INVTYPE_2HWEAPON,
+            INVTYPE_RANGEDRIGHT,
+            INVTYPE_RANGED,
+            INVTYPE_WEAPON,
+            INVTYPE_WEAPONMAINHAND,
+            INVTYPE_HOLDABLE
+        };
+        for (auto invSlot: invSlots) {
+            std::sort(itemsPerSlot[invSlot].begin(), itemsPerSlot[invSlot].end(), [](const ItemPrototype* a, const ItemPrototype* b){
+                return a->ItemLevel < b->ItemLevel;
+            });
+            // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : itemsPerSlot[%d].size = %d", invSlot, itemsPerSlot[invSlot].size());
+        }
+
+        // uint32 coinChance = urand(0, 1);
+        // if (coinChance)
+        //     invSlots = {INVTYPE_RANGED, INVTYPE_RANGEDRIGHT};
+        // else
+        //     invSlots = {INVTYPE_RANGEDRIGHT, INVTYPE_RANGED};
+        // invSlots = {INVTYPE_RANGED, INVTYPE_RANGEDRIGHT};
+        // uint32 index;
+        // while (!invSlots.empty()){
+        //     index = urand(0, invSlots.size() - 1);
+        //     if (GenerateInventorySlotItem(itemsPerSlot, invSlots[index], true))
+        //         break;
+            
+        //     invSlots.erase(invSlots.begin() + index);
+        // }
+
+        // for (auto invSlot: invSlots)
+        //     if (GenerateInventorySlotItem(itemsPerSlot, invSlot, true))
+        //         break;
+
+        // coinChance = urand(0, 1);
+        // if (coinChance){
+        //     GenerateInventorySlotItem(itemsPerSlot, INVTYPE_2HWEAPON, true);
+        // }
+        // else if (me->HasSpell(674)){
+        //     coinChance = urand(0, 1);
+        //     if (coinChance)
+        //         invSlots = {INVTYPE_WEAPONMAINHAND, INVTYPE_WEAPON};
+        //     else
+        //         invSlots = {INVTYPE_WEAPON, INVTYPE_WEAPON};
+
+        //     for (auto invSlot: invSlots){
+        //         GenerateInventorySlotItem(itemsPerSlot, invSlot, true);
+        //     }
+        // }
+        // invSlots = {INVTYPE_WEAPONMAINHAND, INVTYPE_WEAPON, INVTYPE_2HWEAPON};
+        // while (!invSlots.empty()){
+        //     index = urand(0, invSlots.size() - 1);
+        //     if (GenerateInventorySlotItem(itemsPerSlot, invSlots[index], true)){
+        //             // if (!GenerateInventorySlotItem(itemsPerSlot, INVTYPE_WEAPON, true))
+        //             //     GenerateInventorySlotItem(itemsPerSlot, INVTYPE_HOLDABLE, true);
+
+        //         break;
+        //     }
+            
+        //     invSlots.erase(invSlots.begin() + index);
+        // }
+    }
+    else if (my_class == CLASS_SHAMAN){
+        invSlots = {
+            INVTYPE_WEAPON,
+            INVTYPE_WEAPONMAINHAND,
+            INVTYPE_SHIELD,
+            INVTYPE_2HWEAPON,
+            INVTYPE_RELIC
+        };
+        for (auto invSlot: invSlots) {
+            std::sort(itemsPerSlot[invSlot].begin(), itemsPerSlot[invSlot].end(), [](const ItemPrototype* a, const ItemPrototype* b){
+                return a->ItemLevel < b->ItemLevel;
+            });
+            // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : itemsPerSlot[%d].size = %d", invSlot, itemsPerSlot[invSlot].size());
+        }
+
+        GenerateInventorySlotItem(itemsPerSlot, INVTYPE_RELIC, true);
+        
+        uint32 index;
+        if ((m_role == ROLE_MELEE_DPS && me->GetLevel() < 20) || m_role == ROLE_RANGE_DPS || m_role == ROLE_HEALER){
+            invSlots = {INVTYPE_WEAPONMAINHAND, INVTYPE_WEAPON};
+            while (!invSlots.empty()){
+                index = urand(0, invSlots.size() - 1);
+                if (GenerateInventorySlotItem(itemsPerSlot, invSlots[index], true))
+                    break;
+                
+                invSlots.erase(invSlots.begin() + index);
+            }
+            GenerateInventorySlotItem(itemsPerSlot, INVTYPE_SHIELD, true);
+        }
+        // if bot has Two-Handed Axes and Maces talent
+        else if (m_role == ROLE_MELEE_DPS && me->HasSpell(16269)){
+            GenerateInventorySlotItem(itemsPerSlot, INVTYPE_2HWEAPON, true);
+        }
+    }
+    else if (my_class == CLASS_ROGUE){
+        invSlots = {
+            INVTYPE_RANGEDRIGHT,
+            INVTYPE_RANGED,
+            INVTYPE_WEAPON,
+            INVTYPE_WEAPONMAINHAND
+        };
+        for (auto invSlot: invSlots) {
+            std::sort(itemsPerSlot[invSlot].begin(), itemsPerSlot[invSlot].end(), [](const ItemPrototype* a, const ItemPrototype* b){
+                return a->ItemLevel < b->ItemLevel;
+            });
+            // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : itemsPerSlot[%d].size = %d", invSlot, itemsPerSlot[invSlot].size());
+        }
+
+        // if (urand(0, 1))
+        //     invSlots = {INVTYPE_RANGED, INVTYPE_RANGEDRIGHT};
+        // else
+        //     invSlots = {INVTYPE_RANGEDRIGHT, INVTYPE_RANGED};
+
+        // for (auto invSlot: invSlots)
+        //     if (GenerateInventorySlotItem(itemsPerSlot, invSlot, true))
+        //         break;
+        invSlots.clear();
+        invSlots = {INVTYPE_RANGED, INVTYPE_RANGEDRIGHT};
+        uint32 index;
+        while (!invSlots.empty()){
+            index = urand(0, invSlots.size() - 1);
+            if (GenerateInventorySlotItem(itemsPerSlot, invSlots[index], true))
+                break;
+            
+            invSlots.erase(invSlots.begin() + index);
+        }
+
+        invSlots = {INVTYPE_WEAPONMAINHAND, INVTYPE_WEAPON};
+        while (!invSlots.empty()){
+            index = urand(0, invSlots.size() - 1);
+            if (GenerateInventorySlotItem(itemsPerSlot, invSlots[index], true))
+                break;
+            
+            invSlots.erase(invSlots.begin() + index);
+        }
+
+        if (me->HasSpell(674)){
+            GenerateInventorySlotItem(itemsPerSlot, INVTYPE_WEAPON, true);
+            // invSlots = {INVTYPE_WEAPONOFFHAND, INVTYPE_WEAPON};
+            // index = urand(0, invSlots.size() - 1);
+            // while (!GenerateInventorySlotItem(itemsPerSlot, invSlots[index], true) && !invSlots.empty()){
+            //     invSlots.erase(invSlots.begin()+index);
+            //     index = urand(0, invSlots.size() - 1);
+            // }
+        }
+    }
+    else if (my_class == CLASS_DRUID){
+        invSlots = {
+            INVTYPE_RELIC,
+            INVTYPE_WEAPON,
+            INVTYPE_WEAPONMAINHAND,
+            INVTYPE_HOLDABLE,
+            INVTYPE_2HWEAPON
+        };
+        for (auto invSlot: invSlots) {
+            std::sort(itemsPerSlot[invSlot].begin(), itemsPerSlot[invSlot].end(), [](const ItemPrototype* a, const ItemPrototype* b){
+                return a->ItemLevel < b->ItemLevel;
+            });
+            // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : itemsPerSlot[%d].size = %d", invSlot, itemsPerSlot[invSlot].size());
+        }
+
+        GenerateInventorySlotItem(itemsPerSlot, INVTYPE_RELIC, true);
+
+        invSlots = {INVTYPE_WEAPON, INVTYPE_WEAPONMAINHAND, INVTYPE_2HWEAPON};
+        uint32 index;
+        while (!invSlots.empty()){
+            index = urand(0, invSlots.size() - 1);
+            if (GenerateInventorySlotItem(itemsPerSlot, invSlots[index], true)){
+                if (invSlots[index] != INVTYPE_2HWEAPON)
+                    GenerateInventorySlotItem(itemsPerSlot, INVTYPE_HOLDABLE, true);
+
+                break;
+            }
+            
+            invSlots.erase(invSlots.begin() + index);
+        }
+    }
+    else if (my_class == CLASS_MAGE || my_class == CLASS_WARLOCK || my_class == CLASS_PRIEST){
+        invSlots = {
+            INVTYPE_RANGEDRIGHT,
+            INVTYPE_WEAPON,
+            INVTYPE_WEAPONMAINHAND,
+            INVTYPE_HOLDABLE,
+            INVTYPE_2HWEAPON
+        };
+        for (auto invSlot: invSlots) {
+            std::sort(itemsPerSlot[invSlot].begin(), itemsPerSlot[invSlot].end(), [](const ItemPrototype* a, const ItemPrototype* b){
+                return a->ItemLevel < b->ItemLevel;
+            });
+            // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : itemsPerSlot[%d].size = %d", invSlot, itemsPerSlot[invSlot].size());
+        }
+
+        GenerateInventorySlotItem(itemsPerSlot, INVTYPE_RANGEDRIGHT, true);
+
+        invSlots = {INVTYPE_WEAPON, INVTYPE_WEAPONMAINHAND, INVTYPE_2HWEAPON};
+        uint32 index;
+        while (!invSlots.empty()){
+            index = urand(0, invSlots.size() - 1);
+            if (GenerateInventorySlotItem(itemsPerSlot, invSlots[index], true)){
+                if (invSlots[index] != INVTYPE_2HWEAPON)
+                    GenerateInventorySlotItem(itemsPerSlot, INVTYPE_HOLDABLE, true);
+
+                break;
+            }
+            
+            invSlots.erase(invSlots.begin() + index);
+        }
+    }
+
+    GenerateBags();
+    // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::UpdateAI : Bags are generated.");
+    AddRangedWeaponAmmo();
+}
+
+bool WorldBotAI::GenerateInventorySlotItem(std::map<uint32 /*slot*/, std::vector<ItemPrototype const*>>& itemsPerSlot, uint32 invSlot, bool isNeedToEquip){
+    bool isGearSelected = false;
+    std::vector<uint32> enchIds;
+    bool isFirstRing = true;
+
+    while (itemsPerSlot[invSlot].size() > 0 && !isGearSelected){
+        float gearQuality = sPlayerBotMgr.GetWorldBotGearQuality();
+        
+        // gearQuality = frand(gearQuality, 1.0f);
+        // uint32 indexOffset = static_cast<uint32>( std::floor(frand(gearQuality, 1.0f) * itemsPerSlot[invSlot].size()) );
+        enchIds.clear();
+        std::vector<uint32> whiteIndexes;
+        std::vector<uint32> greenIndexes;
+        std::vector<uint32> blueIndexes;
+        std::vector<uint32> purpleIndexes;
+        for (uint32 j = 0; j < itemsPerSlot[invSlot].size(); ++j){
+            if (itemsPerSlot[invSlot][j]->Quality == ITEM_QUALITY_UNCOMMON)
+                greenIndexes.push_back(j);
+            else if (itemsPerSlot[invSlot][j]->Quality == ITEM_QUALITY_RARE)
+                blueIndexes.push_back(j);
+            else if (itemsPerSlot[invSlot][j]->Quality == ITEM_QUALITY_EPIC)
+                purpleIndexes.push_back(j);
+            else if (itemsPerSlot[invSlot][j]->Quality == ITEM_QUALITY_NORMAL)
+                whiteIndexes.push_back(j);
+        }
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : index vectors' sizes:");
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "-- white: %d, green: %d, blue: %d, purple: %d.", whiteIndexes.size(), greenIndexes.size(), blueIndexes.size(), purpleIndexes.size());
+        uint32 randomIndex = 0;
+        float effectiveQuality = gearQuality + frand(-0.2f, 0.085f);
+        if (effectiveQuality < 0.0f)
+            effectiveQuality = 0.0f;
+        else if (effectiveQuality > 1.0f)
+            effectiveQuality = 1.0f;
+        
+        if (!purpleIndexes.empty() && effectiveQuality >= 0.8f){
+            uint32 size = purpleIndexes.size();
+            uint32 indexOffset = static_cast<uint32>(std::round(effectiveQuality * (size - 1)));
+            randomIndex = purpleIndexes[urand(indexOffset, size - 1)];
+        }
+        else if (!blueIndexes.empty() && effectiveQuality >= 0.65f){
+            uint32 size = blueIndexes.size();
+            uint32 indexOffset = static_cast<uint32>(std::round(effectiveQuality * (size - 1)));
+            randomIndex = blueIndexes[urand(indexOffset, size - 1)];
+        }
+        else if (!greenIndexes.empty() && effectiveQuality >= 0.3f){
+            uint32 size = greenIndexes.size();
+            uint32 indexOffset = static_cast<uint32>(std::round(effectiveQuality * (size - 1)));
+            randomIndex = greenIndexes[urand(indexOffset, size - 1)];
+        }
+        else if (!whiteIndexes.empty())
+            randomIndex = SelectRandomContainerElement(whiteIndexes);
+        else {
+            isGearSelected = false;
+            break;
+        }
+        
+        ItemPrototype const* pProto = itemsPerSlot[invSlot][randomIndex];
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "\t Evaluating `%s`; randomIndex = %d; effectiveQuality = %f", pProto->Name1, randomIndex, effectiveQuality);
+        uint32 randomEnchId = 0;
+
+        if (pProto->RandomProperty){
+            EnchStoreList enchList = GetEnchStoreListByItemRandomProperty(pProto->RandomProperty);
+            if (enchList.empty()){
+                sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : enchList is empty. Excluding item '%s' (#%d) from candidate list.", pProto->Name1, pProto->ItemId);
+                return isGearSelected;
+            }
+
+            // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::EquipWarriorGear : found ench list for item proto #%d; list size: %d", pProto->ItemId, enchList.size());
+            // for (EnchStoreItem ench: enchList){
+            //     sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "\t enchId: %d", ench.ench);
+            // }
+
+
+            for (EnchStoreItem ench: enchList){
+                const ItemRandomPropertiesEntry* propEntry = sItemRandomPropertiesStore.LookupEntry(ench.ench);
+                if (!propEntry)
+                    continue;
+                
+                std::string suffx {propEntry->internalName};
+                if (IsRandomEnchantRelevant(suffx)){
+                    enchIds.push_back(ench.ench);
+                }
+            }
+            if (enchIds.empty()){
+                itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
+                // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : 'enchIds' is empty.");
+                continue;
+            }
+
+            randomEnchId = enchIds[urand(0, enchIds.size()-1)];
+        }
+        
+        if (!randomEnchId && !AreItemStatsRelevant(pProto)){
+            isGearSelected = false;
+            itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
+            continue;
+        }
+
+        Item* item = Item::CreateItem(pProto->ItemId, 1, me->GetGUID());
+        if (!item){
+            sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : error creating item %d id", pProto->ItemId);
+            isGearSelected = false;
+            itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
+            continue;
+        }
+
+        if (randomEnchId)
+            item->SetItemRandomProperties(randomEnchId);
+        me->SatisfyItemRequirements(pProto);
+
+        GenerateInventorySlotPermEnchant(item);
+
+        if (isNeedToEquip){
+            if (me->IsInCombat())
+                me->CombatStop();
+            uint16 dest;
+            uint8 msg;
+
+            msg = me->CanEquipItem(NULL_SLOT, dest, item, false);
+            if (msg != EQUIP_ERR_OK){
+                sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateGear : me->CanEquipItem returned error %d; my location is\"%d\"; my name \"%s\".", msg, me->GetAreaId(), me->GetName());
+                // Unit* pVictim = me->GetVictim();
+                // if (pVictim)
+                //     sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "\t\t my victim: \"%s\"", pVictim->GetName());
+                isGearSelected = false;
+                itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
+                continue;
+            }
+
+            me->EquipItem(dest, item, true);
+        }
+        else {
+            ItemPosCountVec dest;
+            uint8 destSlot;
+            uint8 msg = me->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, destSlot);
+            if (msg == EQUIP_ERR_OK)
+                me->StoreItem(dest, item, true);
+        }
+        
+        itemsPerSlot[invSlot].erase(itemsPerSlot[invSlot].begin() + randomIndex);
+        
+
+        if (isFirstRing && invSlot == INVTYPE_FINGER){
+            isFirstRing = false;
+            isGearSelected = false;
+        }
+        else
+            isGearSelected = true;
+        
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "WorldBotAI::GenerateInventorySlotItem : slot %d, selected item `%s` (#%d).", invSlot, pProto->Name1, pProto->ItemId);
+        // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "\t effectiveQuality = %f", effectiveQuality);
+    }
+
+    return isGearSelected;
+}
+
+void WorldBotAI::GenerateBags(){
+    uint32 bagId = 4500; // Traveler's Backpack id
+    
+    // add only 3 bags firstly
+    for (uint16 slot = INVENTORY_SLOT_BAG_START; slot != INVENTORY_SLOT_BAG_END - 1; ++slot){
+        Item* pBag = Item::CreateItem(bagId, 1, me->GetObjectGuid());
+        
+        Item* pItem = me->EquipItem(slot, pBag, true);
+        if (!pItem){
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Bot DIDN'T equip the bag.");
+        }
+        // {
+        //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Equipped bag into slot %d with item guid (#%d).", slot, pItem->GetProto()->ItemId);
+        // }
+        // else
+    }
+
+    if (m_class == CLASS_HUNTER){
+        Item* pItem = me->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
+        if (!pItem)
+            return;
+        //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI] : ranged weapon equipped \"%s\"", pItem->GetProto()->Name1);
+        // else{
+        //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "WorldBotAI::GenerateBags : no ranged weapon found.");
+        //     return;
+        // }
+
+        std::vector<uint32> ammoBags;
+
+        if (pItem->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_BOW || pItem->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_CROSSBOW)
+            // Ancient Sinew Wrapped Lamina, Harpy Hide Quiver, Quickdraw Quiver, Heavy Quiver, Medium Quiver, Small Quiver
+            ammoBags = {18714, 19319, 8217, 7371, 11362, 5439};
+        else if (pItem->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_GUN)
+            // Gnoll Skin Bandolier, Thick Leather Ammo Pouch, Heavy Leather Ammo Pouch, Medium Shot Pouch, Small Shot Pouch
+            ammoBags = {19320, 8218, 7372, 11363, 5441};
+
+
+        uint32 ammoBagId = 0;
+        for (uint32 id: ammoBags){
+            const ItemPrototype* pProto = sObjectMgr.GetItemPrototype(id);
+            if (!pProto)
+                continue;
+
+            if (m_level >= pProto->RequiredLevel){
+                ammoBagId = pProto->ItemId;
+                break;
+            }
+        }
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Selected ammo bag id = %d.", ammoBagId);
+
+        Item* pAmmoBag = Item::CreateItem(ammoBagId, 1, me->GetObjectGuid());
+        if (pAmmoBag){
+            if (!me->EquipItem(INVENTORY_SLOT_BAG_END-1, pAmmoBag, true))
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Bot #%d can't equip ammo bag.", me->GetGUIDLow());
+            // else
+            //     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Bot #%d equipped ammo bag \"%s\".", me->GetGUIDLow(), pAmmoBag->GetProto()->Name1);
+        }
+        else
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Can't create ammo bagitem #%d.", ammoBagId);
+    }
+    else{
+        Item* pBag = Item::CreateItem(bagId, 1, me->GetObjectGuid());
+        if (!pBag){
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Error creating item #%d.", bagId);
+            return;
+        }
+
+        if (!me->EquipItem(INVENTORY_SLOT_BAG_END-1, pBag, true)){
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]: Bot %d error equiping item #%d", me->GetGUIDLow(), pBag->GetProto()->ItemId);
+            return;
+        }
+    }
+}
+
+bool WorldBotAI::AreItemStatsRelevant(const ItemPrototype* pProto) const {
+    // which aura mods the item applies
+    std::bitset<TOTAL_AURAS> auraMods;
+
+    // which stats the item modifies
+    std::bitset<MAX_ITEM_MOD> itemStats;
+
+    std::bitset<MAX_SPELL_SCHOOL> spellSchools; // probably useless for my needs, see next instead
+
+    // actual data used to represent spell schools of spells that modify stats
+    std::bitset<SPELL_SCHOOL_MASK_ALL+1> effectMiscValues;
+
+    bool result = false;
+    
+    for (_ItemStat stat: pProto->ItemStat){
+        if (stat.ItemStatType < MAX_ITEM_MOD)
+            itemStats.set(stat.ItemStatType);
+    }
+
+    for (_ItemSpell _itemSpell: pProto->Spells){
+        const SpellEntry* pSpellEntry = sSpellMgr.GetSpellEntry(_itemSpell.SpellId);
+        if (!pSpellEntry)
+            continue;
+        
+        for (uint32 auraIndex: pSpellEntry->EffectApplyAuraName){
+            if (auraIndex < TOTAL_AURAS)
+                auraMods.set(auraIndex);
+        }
+
+        spellSchools.set(pSpellEntry->School);
+
+        for (auto value: pSpellEntry->EffectMiscValue){
+            if (value < 0 || value > SPELL_SCHOOL_MASK_ALL)
+                continue;
+            effectMiscValues.set(value);
+        }
+    }
+
+    if (pProto->Quality == ITEM_QUALITY_NORMAL || pProto->InventoryType == INVTYPE_RANGED ||
+                pProto->InventoryType == INVTYPE_RANGEDRIGHT)
+        return true;
+
+    if (me->GetClass() == CLASS_WARRIOR)
+    {
+        if ( (itemStats[ITEM_MOD_STRENGTH] ||
+            (itemStats[ITEM_MOD_STAMINA] && itemStats[ITEM_MOD_AGILITY]) ||
+            itemStats[ITEM_MOD_STAMINA] ||
+            auraMods[SPELL_AURA_MOD_ATTACK_POWER] ||
+            auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_CRIT_CHANCE] ||
+            auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE]) &&
+            (!itemStats[ITEM_MOD_INTELLECT] && !auraMods[SPELL_AURA_MOD_POWER_REGEN] && !auraMods[SPELL_AURA_MOD_DAMAGE_DONE] &&
+            !auraMods[SPELL_AURA_MOD_HEALING_DONE])
+        )
+        {
+            result = true;
+        }
+    }
+    else if (me->GetClass() == CLASS_PALADIN)
+    {
+        if (m_currentSpec.find("retri") != std::string::npos)
+        {
+            if ((itemStats[ITEM_MOD_STRENGTH] ||
+                (itemStats[ITEM_MOD_STAMINA] && itemStats[ITEM_MOD_STRENGTH]) || auraMods[SPELL_AURA_MOD_ATTACK_POWER] ||
+                auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_CRIT_CHANCE] || auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE]) && 
+                !auraMods[SPELL_AURA_MOD_HEALING_DONE] ||
+                (auraMods[SPELL_AURA_MOD_DAMAGE_DONE] && (effectMiscValues[SPELL_SCHOOL_MASK_HOLY] || effectMiscValues[SPELL_SCHOOL_MASK_MAGIC])))
+            {
+                result = true;
+            }
+        }
+        else if (m_currentSpec.find("holy") != std::string::npos)
+        {
+            if ( (itemStats[ITEM_MOD_INTELLECT] ||
+                itemStats[ITEM_MOD_STAMINA] ||
+                auraMods[SPELL_AURA_MOD_HEALING_DONE] ||
+                auraMods[SPELL_AURA_MOD_POWER_REGEN]) && (!itemStats[ITEM_MOD_STRENGTH] && !itemStats[ITEM_MOD_AGILITY])
+            )
+            {
+                result = true;
+            }
+        }
+    }
+    else if (me->GetClass() == CLASS_HUNTER)
+    {
+        if ( (itemStats[ITEM_MOD_AGILITY] || itemStats[ITEM_MOD_STAMINA] ||
+            auraMods[SPELL_AURA_MOD_RANGED_ATTACK_POWER] ||
+            auraMods[SPELL_AURA_MOD_ATTACKER_RANGED_CRIT_CHANCE] ||
+            auraMods[SPELL_AURA_MOD_ATTACKER_RANGED_HIT_CHANCE]) &&
+            (!auraMods[SPELL_AURA_MOD_POWER_REGEN] && !auraMods[SPELL_AURA_MOD_HEALING_DONE] &&
+            !auraMods[SPELL_AURA_MOD_DAMAGE_DONE])
+        )
+        {
+            result = true;
+        }
+    }
+    else if (me->GetClass() == CLASS_SHAMAN)
+    {
+        if (m_currentSpec.find("elem") != std::string::npos)
+        {
+            if ( (itemStats[ITEM_MOD_INTELLECT] ||
+                auraMods[SPELL_AURA_MOD_SPELL_HIT_CHANCE] ||
+                (auraMods[SPELL_AURA_MOD_DAMAGE_DONE] && (effectMiscValues[SPELL_SCHOOL_MASK_MAGIC] || effectMiscValues[SPELL_SCHOOL_MASK_NATURE])) ||
+                auraMods[SPELL_AURA_MOD_SPELL_CRIT_CHANCE] ||
+                auraMods[SPELL_AURA_MOD_POWER_REGEN]) && !itemStats[ITEM_MOD_STRENGTH] && !itemStats[ITEM_MOD_AGILITY]
+            )
+            {
+                result = true;
+            }
+        }
+        else if (m_currentSpec.find("enhance") != std::string::npos)
+        {
+            if ( (itemStats[ITEM_MOD_AGILITY] ||
+                itemStats[ITEM_MOD_STRENGTH] ||
+                (itemStats[ITEM_MOD_STAMINA] && !itemStats[ITEM_MOD_INTELLECT]) ||
+                auraMods[SPELL_AURA_MOD_ATTACK_POWER] ||
+                auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_CRIT_CHANCE] ||
+                auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE]) && !auraMods[SPELL_AURA_MOD_DAMAGE_DONE]
+            )
+            {
+                result = true;
+            }
+        }
+        else if (m_currentSpec.find("resto") != std::string::npos)
+        {
+            if ( (itemStats[ITEM_MOD_INTELLECT] ||
+                itemStats[ITEM_MOD_SPIRIT] ||
+                auraMods[SPELL_AURA_MOD_HEALING_DONE] ||
+                (auraMods[SPELL_AURA_MOD_DAMAGE_DONE] && effectMiscValues[SPELL_SCHOOL_MASK_MAGIC]) ||
+                auraMods[SPELL_AURA_MOD_SPELL_CRIT_CHANCE] ||
+                auraMods[SPELL_AURA_MOD_POWER_REGEN]) && (!itemStats[ITEM_MOD_STRENGTH] && !itemStats[ITEM_MOD_AGILITY])
+            )
+            {
+                result = true;
+            }
+        }
+    }
+    else if (me->GetClass() == CLASS_ROGUE)
+    {
+        if ( (itemStats[ITEM_MOD_AGILITY] || itemStats[ITEM_MOD_STRENGTH] || itemStats[ITEM_MOD_STAMINA] ||
+            auraMods[SPELL_AURA_MOD_ATTACK_POWER] ||
+            auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_CRIT_CHANCE] ||
+            auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE]) && (!itemStats[ITEM_MOD_INTELLECT] &&
+            !auraMods[SPELL_AURA_MOD_POWER_REGEN] &&
+            !auraMods[SPELL_AURA_MOD_DAMAGE_DONE] && !auraMods[SPELL_AURA_MOD_HEALING_DONE])
+        )
+        {
+            result = true;
+        }
+    }
+    else if (me->GetClass() == CLASS_DRUID)
+    {
+        if (m_currentSpec.find("feral") != std::string::npos)
+        {
+            if ( (itemStats[ITEM_MOD_AGILITY] ||
+                itemStats[ITEM_MOD_STRENGTH] ||
+                itemStats[ITEM_MOD_STAMINA] ||
+                itemStats[ITEM_MOD_INTELLECT] ||
+                auraMods[SPELL_AURA_MOD_ATTACK_POWER] ||
+                auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_CRIT_CHANCE] ||
+                auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE]) && (!auraMods[SPELL_AURA_MOD_POWER_REGEN] && 
+                !auraMods[SPELL_AURA_MOD_DAMAGE_DONE] && !auraMods[SPELL_AURA_MOD_HEALING_DONE])
+            )
+            {
+                result = true;
+            }
+        }
+        else if (m_currentSpec.find("balance") != std::string::npos)
+        {
+            if ( (itemStats[ITEM_MOD_INTELLECT] ||
+                (auraMods[SPELL_AURA_MOD_DAMAGE_DONE] && spellSchools[SPELL_SCHOOL_NATURE]) ||
+                auraMods[SPELL_AURA_MOD_SPELL_HIT_CHANCE] ||
+                (auraMods[SPELL_AURA_MOD_DAMAGE_DONE] && (effectMiscValues[SPELL_SCHOOL_MASK_MAGIC] || effectMiscValues[SPELL_SCHOOL_MASK_NATURE] ||
+                effectMiscValues[SPELL_SCHOOL_MASK_ARCANE])) ||
+                auraMods[SPELL_AURA_MOD_SPELL_CRIT_CHANCE] ||
+                auraMods[SPELL_AURA_MOD_POWER_REGEN]) && (!itemStats[ITEM_MOD_STRENGTH] && !itemStats[ITEM_MOD_AGILITY] &&
+                !auraMods[SPELL_AURA_MOD_ATTACK_POWER] && !auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE] &&
+                !auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_CRIT_CHANCE])
+            )
+            {
+                result = true;
+            }
+        }
+        else if (m_currentSpec.find("resto") != std::string::npos)
+        {
+            if ( (itemStats[ITEM_MOD_INTELLECT] ||
+                itemStats[ITEM_MOD_SPIRIT] ||
+                auraMods[SPELL_AURA_MOD_HEALING_DONE] ||
+                (auraMods[SPELL_AURA_MOD_DAMAGE_DONE] && effectMiscValues[SPELL_SCHOOL_MASK_MAGIC]) ||
+                auraMods[SPELL_AURA_MOD_SPELL_CRIT_CHANCE] ||
+                auraMods[SPELL_AURA_MOD_POWER_REGEN]) && (!itemStats[ITEM_MOD_STRENGTH] && !itemStats[ITEM_MOD_AGILITY] &&
+                !auraMods[SPELL_AURA_MOD_ATTACK_POWER] && !auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE] &&
+                !auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_CRIT_CHANCE])
+            )
+            {
+                result = true;
+            }
+        }
+    }
+    else if (me->GetClass() == CLASS_WARLOCK)
+    {
+        if (
+            (itemStats[ITEM_MOD_INTELLECT] || itemStats[ITEM_MOD_STAMINA] ||
+            (auraMods[SPELL_AURA_MOD_DAMAGE_DONE] && (effectMiscValues[SPELL_SCHOOL_MASK_MAGIC] || effectMiscValues[SPELL_SCHOOL_MASK_SHADOW])) ||
+            auraMods[SPELL_AURA_MOD_SPELL_HIT_CHANCE] || auraMods[SPELL_AURA_MOD_REGEN]) &&
+            (!auraMods[SPELL_AURA_MOD_HEALING_DONE] && !auraMods[SPELL_AURA_MOD_POWER_REGEN] && !itemStats[ITEM_MOD_STRENGTH] &&
+            !itemStats[ITEM_MOD_AGILITY] && !auraMods[SPELL_AURA_MOD_ATTACK_POWER] && !auraMods[SPELL_AURA_MOD_HIT_CHANCE])
+        )
+        {
+            result = true;
+        }
+    }
+    else if (me->GetClass() == CLASS_MAGE)
+    {
+        if (m_currentSpec.find("arcane") != std::string::npos){
+            if (
+                ((auraMods[SPELL_AURA_MOD_DAMAGE_DONE] && (effectMiscValues[SPELL_SCHOOL_MASK_MAGIC] || effectMiscValues[SPELL_SCHOOL_MASK_ARCANE])) ||
+                itemStats[ITEM_MOD_STAMINA] ||
+                itemStats[ITEM_MOD_INTELLECT]) && (!itemStats[ITEM_MOD_STRENGTH] && !itemStats[ITEM_MOD_AGILITY] &&
+                !auraMods[SPELL_AURA_MOD_ATTACK_POWER] && !auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE] &&
+                !auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_CRIT_CHANCE])
+            )
+            {
+                result = true;
+            }
+        }
+        else if (m_currentSpec.find("fire") != std::string::npos){
+            if (
+                ((auraMods[SPELL_AURA_MOD_DAMAGE_DONE] && (effectMiscValues[SPELL_SCHOOL_MASK_MAGIC] || effectMiscValues[SPELL_SCHOOL_MASK_FIRE])) ||
+                itemStats[ITEM_MOD_STAMINA] ||
+                itemStats[ITEM_MOD_INTELLECT]) && (!itemStats[ITEM_MOD_STRENGTH] && !itemStats[ITEM_MOD_AGILITY] &&
+                !auraMods[SPELL_AURA_MOD_ATTACK_POWER] && !auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE] &&
+                !auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_CRIT_CHANCE])
+            )
+                result = true;
+        }
+        else if (m_currentSpec.find("frost") != std::string::npos){
+            if (
+                ((auraMods[SPELL_AURA_MOD_DAMAGE_DONE] && (effectMiscValues[SPELL_SCHOOL_MASK_MAGIC] || effectMiscValues[SPELL_SCHOOL_MASK_FROST])) ||
+                itemStats[ITEM_MOD_STAMINA] ||
+                itemStats[ITEM_MOD_INTELLECT]) && (!itemStats[ITEM_MOD_STRENGTH] && !itemStats[ITEM_MOD_AGILITY] &&
+                !auraMods[SPELL_AURA_MOD_ATTACK_POWER] && !auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE] &&
+                !auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_CRIT_CHANCE] && (auraMods[SPELL_AURA_MOD_DAMAGE_DONE] || !auraMods[SPELL_AURA_MOD_HEALING_DONE]))
+            )
+                result = true;
+        }
+        
+    }
+    else if (me->GetClass() == CLASS_PRIEST)
+    {
+        if (m_currentSpec.find("disc") != std::string::npos){
+            if (
+                (itemStats[ITEM_MOD_STAMINA] || itemStats[ITEM_MOD_INTELLECT] ||
+                itemStats[ITEM_MOD_SPIRIT] || auraMods[SPELL_AURA_MOD_POWER_REGEN] ||
+                (auraMods[SPELL_AURA_MOD_DAMAGE_DONE] && (effectMiscValues[SPELL_SCHOOL_MASK_MAGIC] || effectMiscValues[SPELL_SCHOOL_MASK_HOLY]))) &&
+                (!itemStats[ITEM_MOD_STRENGTH] && !itemStats[ITEM_MOD_AGILITY] &&
+                !auraMods[SPELL_AURA_MOD_ATTACK_POWER] && !auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE] &&
+                !auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_CRIT_CHANCE])
+            )
+                result = true;
+        }
+        else if (m_currentSpec.find("holy") != std::string::npos)
+        {
+            if (
+                itemStats[ITEM_MOD_STAMINA] || itemStats[ITEM_MOD_INTELLECT] ||
+                itemStats[ITEM_MOD_SPIRIT] || auraMods[SPELL_AURA_MOD_HEALING_DONE] ||
+                auraMods[SPELL_AURA_MOD_POWER_REGEN] ||
+                (!itemStats[ITEM_MOD_STRENGTH] && !itemStats[ITEM_MOD_AGILITY] &&
+                !auraMods[SPELL_AURA_MOD_ATTACK_POWER] && !auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE] &&
+                !auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_CRIT_CHANCE])
+            )
+            {
+                result = true;
+            }
+        }
+        else if (m_currentSpec.find("shadow") != std::string::npos)
+        {
+            if (
+                (itemStats[ITEM_MOD_STAMINA] || itemStats[ITEM_MOD_INTELLECT] ||
+                itemStats[ITEM_MOD_SPIRIT] ||
+                (auraMods[SPELL_AURA_MOD_DAMAGE_DONE] && (effectMiscValues[SPELL_SCHOOL_MASK_MAGIC] || effectMiscValues[SPELL_SCHOOL_MASK_SHADOW])) ||
+                auraMods[SPELL_AURA_MOD_SPELL_CRIT_CHANCE] || auraMods[SPELL_AURA_MOD_HIT_CHANCE]) &&
+                (!itemStats[ITEM_MOD_STRENGTH] && !itemStats[ITEM_MOD_AGILITY] &&
+                !auraMods[SPELL_AURA_MOD_ATTACK_POWER] && !auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_HIT_CHANCE] &&
+                !auraMods[SPELL_AURA_MOD_ATTACKER_MELEE_CRIT_CHANCE] && (auraMods[SPELL_AURA_MOD_DAMAGE_DONE] || !auraMods[SPELL_AURA_MOD_HEALING_DONE]))
+            )
+            {
+                result = true;
+            }
+        }
+    }
+
+    return result;
+}
+
+void WorldBotAI::AddRangedWeaponAmmo(){
+    Item* pRangedWeapon = me->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
+    if (!pRangedWeapon || pRangedWeapon->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_WAND)
+        return;
+
+    std::vector<uint32> ammos;
+    if (pRangedWeapon->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_CROSSBOW ||
+        pRangedWeapon->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_BOW)
+        // Thorium Headed Arrow, Jagged Arrow, Precision Arrow, Razor Arrow, Sharp Arrow, Rough Arrow
+        ammos = {18042, 11285, 9399, 3030, 2515, 2512};
+    else if (pRangedWeapon->GetProto()->SubClass == ITEM_SUBCLASS_WEAPON_GUN)
+        // Thorium Shells, Mithril Gyro-Shot, Accurate Slugs, High-Impact Mithril Slugs, Crafted Solid Shot, Solid Shot, Heavy Shot, Light Shot
+        ammos = {15997, 10513, 11284, 10512, 8069, 3033, 2519, 2516};
+
+    const ItemPrototype* pProto = nullptr;
+    for (uint32 id: ammos){
+        pProto = sObjectMgr.GetItemPrototype(id);
+        if (!pProto)
+            continue;
+
+        if (m_level >= pProto->RequiredLevel){
+            break;
+        }
+    }
+    if (!pProto){
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[WorldBotAI]::AddRangeWeaponAmmo : pProto == nullptr.");
+        return;
+    }
+    
+    AddItemToInventory(pProto->ItemId, pProto->GetMaxStackSize());
+    me->SetAmmo(pProto->ItemId);
+}
+
+bool WorldBotAI::IsRandomEnchantRelevant(std::string suffx) const {
+    bool result = false;
+
+    if (me->GetClass() == CLASS_WARRIOR)
+    {
+        if (suffx == "of the Bear" || suffx == "of the Tiger" || suffx == "of Strength" || suffx == "of Stamina" ||
+            suffx == "of Defense" || suffx == "of Critical Strike" || suffx == "of Toughness")
+        {
+            result = true;
+        }
+    }
+    else if (me->GetClass() == CLASS_PALADIN)
+    {
+        if (m_currentSpec.find("holy") != std::string::npos)
+        {
+            if (suffx == "of Intellect" || suffx == "of the Eagle" || suffx == "of the Gorilla" || suffx == "of the Owl" ||
+                suffx == "of Healing" || suffx == "of Concentration")
+            {
+                result = true;
+            }
+        }
+        else
+        {
+            if (suffx == "of the Bear" || suffx == "of the Tiger" || suffx == "of Strength" || suffx == "of Stamina" ||
+                suffx == "of Toughness" || suffx == "of the Gorilla" || suffx == "of Holy Wrath")
+            {
+                result = true;
+            }
+        }
+    }
+    else if (me->GetClass() == CLASS_HUNTER)
+    {
+        if (suffx == "of the Falcon" || suffx == "of the Monkey" || suffx == "of Agility" || suffx == "of Marksmanship" ||
+            suffx == "of the Wolf" || suffx == "of Striking")
+        {
+            result = true;
+        }
+    }
+    else if (me->GetClass() == CLASS_SHAMAN)
+    {
+        if (m_currentSpec.find("enhance") != std::string::npos)
+        {
+            if (suffx == "of Critical Strike" || suffx == "of Strength" || suffx == "of Agility" || suffx == "of the Bear" ||
+                suffx == "of the Gorilla" || suffx == "of the Tiger")
+            {
+                result = true;
+            }
+        }
+        else if (m_currentSpec.find("elem") != std::string::npos)
+        {
+            if (suffx == "of Intellect" || suffx == "of the Eagle" || suffx == "of the Owl" || suffx == "of Nature's Wrath" ||
+                suffx == "of Concentration")
+            {
+                result = true;
+            }
+        }
+        else if (m_currentSpec.find("resto") != std::string::npos)
+        {
+            if (suffx == "of Intellect" || suffx == "of the Owl" || suffx == "of the Eagle" || suffx == "of Healing" ||
+                suffx == "of Concentration" || suffx == "of Spirit")
+            {
+                result = true;
+            }
+        }
+    }
+    else if (me->GetClass() == CLASS_ROGUE)
+    {
+        if (suffx == "of Agility" || suffx == "of the Monkey" || suffx == "of the Tiger" || suffx == "of the Bear" ||
+            suffx == "of Power" || suffx == "of Critical Strike" || suffx == "of Striking")
+        {
+            result = true;
+        }
+    }
+    else if (me->GetClass() == CLASS_DRUID)
+    {
+        if (m_currentSpec.find("balance") != std::string::npos)
+        {
+            if (suffx == "of Intellect" || suffx == "of the Eagle" || suffx == "of the Owl" || suffx == "of Nature's Wrath" ||
+                suffx == "of Concentration")
+            {
+                result = true;
+            }
+        }
+        else if (m_currentSpec.find("feral") != std::string::npos)
+        {
+            if (suffx == "of the Falcon" || suffx == "of the Monkey" || suffx == "of Agility" || suffx == "of Power" ||
+                suffx == "of the Tiger" || suffx == "of Striking")
+            {
+                result = true;
+            }
+        }
+        else if (m_currentSpec.find("resto") != std::string::npos)
+        {
+            if (suffx == "of Intellect" || suffx == "of the Owl" || suffx == "of the Eagle" || suffx == "of Healing" ||
+                suffx == "of Concentration" || suffx == "of Spirit")
+            {
+                result = true;
+            }
+        }
+    }
+    else if (me->GetClass() == CLASS_MAGE)
+    {
+        if (suffx == "of Intellect" || suffx == "of the Owl" || suffx == "of the Eagle" ||
+            suffx == "of Stamina" || suffx == "of Concentration" ||
+            (m_currentSpec.find("arcane") != std::string::npos && suffx == "of Arcane Wrath") ||
+            (m_currentSpec.find("fire")   != std::string::npos && suffx == "of Fiery Wrath") ||
+            (m_currentSpec.find("frost")  != std::string::npos && suffx == "of Frozen Wrath"))
+        {
+            result = true;
+        }
+    }
+    else if (me->GetClass() == CLASS_WARLOCK)
+    {
+        if (suffx == "of Intellect" || suffx == "of Stamina" || suffx == "of the Eagle" || suffx == "of the Owl" ||
+            suffx == "of Shadow Wrath" || suffx == "of Regeneration")
+        {
+            result = true;
+        }
+    }
+    else if (me->GetClass() == CLASS_PRIEST)
+    {
+        if (suffx == "of Intellect" || suffx == "of the Eagle" || suffx == "of the Owl" ||
+            ((m_currentSpec.find("disc")  != std::string::npos ||
+            m_currentSpec.find("holy")  != std::string::npos) && suffx == "of Holy Wrath") ||
+            (m_currentSpec.find("shadow") != std::string::npos && suffx == "of Shadow Wrath"))
+        {
+            result = true;
+        }
+    }
+
+    return result;
+}
+
+void WorldBotAI::GenerateInventorySlotPermEnchant(Item* pItem){
+    if (!pItem)
+        return;
+    
+    float qualityScale = 1.0f;
+    uint32 invSlotType = pItem->GetProto()->InventoryType;
+    std::string enchantName {"Enchant "};
+    if (invSlotType == INVTYPE_CHEST)
+        enchantName.append("Chest");
+    else if (invSlotType == INVTYPE_WRISTS)
+        enchantName.append("Bracer");
+    else if (invSlotType == INVTYPE_HANDS)
+        enchantName.append("Gloves");
+    else if (invSlotType == INVTYPE_FEET)
+        enchantName.append("Boots");
+    else if (invSlotType == INVTYPE_SHIELD)
+        enchantName.append("Shield");
+    else if (invSlotType == INVTYPE_CLOAK)
+        enchantName.append("Cloak");
+    else if (invSlotType == INVTYPE_WEAPON || invSlotType == INVTYPE_WEAPONMAINHAND){
+        enchantName.append("Weapon");
+        qualityScale = 0.1f;
+    }
+    else if (invSlotType == INVTYPE_2HWEAPON){
+        enchantName.append("2H Weapon");
+        qualityScale = 0.1f;
+    }
+    else
+        return;
+        
+    
+    float gearQuality = (sPlayerBotMgr.GetWorldBotGearQuality() + frand(-0.2f, 0.1f)) * qualityScale;
+    if (gearQuality < 0.0f)
+        gearQuality = 0.0f;
+
+    
+    // pItem->SetEnchantment(PERM_ENCHANTMENT_SLOT, 71, 0, 0, me->GetObjectGuid());
+    // const SpellItemEnchantmentEntry* entry = sSpellItemEnchantmentStore.LookupEntry(71);
+    // sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "name: %s", entry->description[0]);
+    std::vector<std::string> suffxVector;
+    uint32 my_class = me->GetClass();
+    if (my_class == CLASS_WARRIOR)
+        suffxVector = {"Stats", "Health", "Absorption", "Agility", "Strength", "Stamina", "Striking", "Impact", 
+            "Icy Chill", "Fiery Weapon", "Demonslaying", "Unholy Weapon", "Crusader", "Lifestealing",
+            "Defense", "Resistance", "Protection", "Dodge", "Block", "Speed"};
+    else if (my_class == CLASS_PALADIN)
+        if (m_role == ROLE_HEALER)
+            suffxVector = {"Stats", "Health", "Intellect", "Mana", "Stamina", "Resistance", "Speed"};
+        else
+            suffxVector = {"Stats", "Health", "Absorption", "Agility", "Strength", "Stamina", "Striking", "Impact", 
+                "Icy Chill", "Fiery Weapon", "Demonslaying", "Unholy Weapon", "Crusader", "Lifestealing", 
+                "Resistance", "Speed"};
+    else if (my_class == CLASS_SHAMAN){
+        if (m_role == ROLE_HEALER)
+            suffxVector = {"Stats", "Health", "Spirit", "Intellect", "Mana", "Stamina", "Resistance", "Speed"};
+        else if (m_role == ROLE_MELEE_DPS)
+            suffxVector = {"Stats", "Health", "Absorption", "Agility", "Strength", "Stamina", "Striking", "Impact", 
+                "Icy Chill", "Fiery Weapon", "Demonslaying", "Unholy Weapon", "Crusader", "Lifestealing",
+                "Resistance", "Speed"};
+        else
+            suffxVector = {"Stats", "Health", "Intellect", "Mana", "Stamina", "Resistance", "Speed", "Spell Power"};
+    }
+    else if (my_class == CLASS_HUNTER)
+        suffxVector = {"Stats", "Health", "Agility", "Stamina", "Striking", "Resistance"};
+    else if (my_class == CLASS_ROGUE)
+        suffxVector = {"Stats", "Health", "Absorption", "Agility", "Strength", "Stamina", "Striking", "Impact", 
+            "Icy Chill", "Fiery Weapon", "Demonslaying", "Unholy Weapon", "Crusader", "Lifestealing",
+            "Resistance", "Speed"};
+    else if (my_class == CLASS_DRUID){
+        if (m_role == ROLE_RANGE_DPS)
+            suffxVector = {"Stats", "Health", "Intellect", "Mana", "Stamina", "Resistance", "Speed", "Spell Power"};
+        else if (m_role == ROLE_MELEE_DPS)
+            suffxVector = {"Stats", "Health", "Absorption", "Agility", "Strength", "Stamina", "Striking", "Impact", 
+            "Icy Chill", "Fiery Weapon", "Demonslaying", "Unholy Weapon", "Crusader", "Lifestealing",
+            "Resistance", "Speed"};
+        else
+            suffxVector = {"Stats", "Health", "Spirit", "Intellect", "Mana", "Stamina", "Resistance", "Speed"};
+    }
+    else if (my_class == CLASS_MAGE || my_class == CLASS_WARLOCK)
+        suffxVector = {"Stats", "Health", "Intellect", "Mana", "Stamina", "Resistance", "Speed", "Spell Power"};
+    else if (my_class == CLASS_PRIEST){
+        if (m_role == ROLE_HEALER)
+            suffxVector = {"Stats", "Health", "Spirit", "Intellect", "Mana", "Stamina", "Resistance", "Speed"};
+        else
+            suffxVector = {"Stats", "Health", "Intellect", "Mana", "Stamina", "Resistance", "Speed", "Spell Power"};
+    }
+    // we should never get here
+    else
+        return;
+
+    // std::vector<const SpellEntry*> possibleEnchants;
+    // int32 maxSkillLevel = me->GetLevel() * 5;
+    std::vector<uint32> enchantIds;
+
+    SkillLineAbilityMapBounds skillMapBounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySkillId(SKILL_ENCHANTING);
+    for (auto it = skillMapBounds.first; it != skillMapBounds.second; ++it){
+        const SkillLineAbilityEntry* entry = it->second;
+
+        const SpellEntry* pSpellEntry = sSpellMgr.GetSpellEntry(entry->spellId);
+        if (!pSpellEntry)
+            continue;
+
+        // std::regex pattern {enchantName};
+        // if (!std::regex_search(pSpellEntry->SpellName[0], pattern))
+        if (pSpellEntry->SpellName[0].find(enchantName) == std::string::npos)
+            continue;
+
+        if (suffxVector.empty())
+            continue;
+
+        bool isRelevant = false;
+        for (auto suffx: suffxVector){
+            // pattern.assign(suffx);
+            // if (std::regex_search(pSpellEntry->SpellName[0], pattern)){
+            if (pSpellEntry->SpellName[0].find(suffx) != std::string::npos){
+                isRelevant = true;
+                break;
+            }
+        }
+        if (!isRelevant)
+            continue;
+
+        enchantIds.push_back(pSpellEntry->EffectMiscValue[0]);
+    }
+
+    if (enchantIds.empty())
+        return;
+    
+    // not the best way to scale quality of enchants...
+    gearQuality *= qualityScale;
+    uint32 minIndex = static_cast<uint32>( std::round(gearQuality * (enchantIds.size() - 1)) );
+    uint32 maxIndex = static_cast<uint32>(std::round((me->GetLevel() + 10 * gearQuality) / 60.0f  * (enchantIds.size()-1)));
+    if (minIndex > maxIndex)
+        minIndex = maxIndex;
+    uint32 randomEnchantId = enchantIds[urand(minIndex, maxIndex)];
+    pItem->SetEnchantment(PERM_ENCHANTMENT_SLOT, randomEnchantId, 0, 0, me->GetObjectGuid());
+}
+
+void WorldBotAI::InitTalentsByRandomSpec(){
+    me->InitTalentForLevel();
+
+    std::unordered_map<std::string, std::vector<std::pair<uint32, uint32>>> specMap;
+    std::vector<std::string> specNames;
+    std::string className;
+    
+    uint32 my_class = me->GetClass();
+    if (my_class == CLASS_WARRIOR)
+        className = "warrior";
+    else if (my_class == CLASS_PALADIN)
+        className = "paladin";
+    else if (my_class == CLASS_SHAMAN)
+        className = "shaman";
+    else if (my_class == CLASS_HUNTER)
+        className = "hunter";
+    else if (my_class == CLASS_ROGUE)
+        className = "rogue";
+    else if (my_class == CLASS_DRUID)
+        className = "druid";
+    else if (my_class == CLASS_MAGE)
+        className = "mage";
+    else if (my_class == CLASS_WARLOCK)
+        className = "warlock";
+    else
+        className = "priest";
+
+    specMap = sPlayerBotMgr.GetSpecsFilterBySubstring(className);
+    if (!specMap.size()){
+        sLog.Out(LOG_DBERROR, LOG_LVL_BASIC, "WorldBotAI::InitTalentSpecs : specMap.size() is equal to 0. The bot's talents were not initialized.");
+        return;
+    }
+
+    for (const auto& entry: specMap){
+        // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "--- Adding \"%s\" spec.", entry.first.c_str());
+        specNames.push_back(entry.first);
+    }
+    
+    m_currentSpec = SelectRandomContainerElement(specNames);
+    sLog.Out(LOG_BASIC, LOG_LVL_BASIC, "__ m_currentSpec = \"%s\"", m_currentSpec.c_str());
+    int index = 0;
+
+    while (me->GetFreeTalentPoints()){
+        uint32 old_talents = me->GetFreeTalentPoints();
+        uint32 id = specMap[m_currentSpec][index].first;
+        uint32 rank = specMap[m_currentSpec][index].second;
+        // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "--- talents before: %d; LearnTalent (%d, %d)", old_talents, id, rank);
+        if (id == 761){
+            // Entangling Roots (required for druid's Nature's Grasp)
+            std::vector<uint32> spellCandidates = {339, 1062, 5195, 5196, 9852, 9853};
+            for (auto id: spellCandidates){
+                const SpellEntry* spell = sSpellMgr.GetSpellEntry(id);
+                if (!spell)
+                    continue;
+
+                if (me->GetLevel() >= spell->spellLevel){
+                    me->LearnSpell(id, false);
+                    m_spells.druid.pEntanglingRoots = spell;
+                }
+            }
+        }
+        if (!me->LearnTalent(id, rank))
+            break;
+        // sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "\t\t talents after %d", me->GetFreeTalentPoints());
+        index++;
+    }
+
+    // set role depending on spec
+    if (my_class == CLASS_WARRIOR){
+        if (m_currentSpec.find("tank") != std::string::npos || m_currentSpec.find("proto") != std::string::npos)
+            m_role = ROLE_TANK;
+        else
+            m_role = ROLE_MELEE_DPS;
+    }
+    else if (my_class == CLASS_PALADIN){
+        if (m_currentSpec.find("holy") != std::string::npos || m_currentSpec.find("healer") != std::string::npos)
+            m_role = ROLE_HEALER;
+        else
+            m_role = ROLE_MELEE_DPS;
+    }
+    else if (my_class == CLASS_SHAMAN){
+        if (m_currentSpec.find("elem") != std::string::npos || m_currentSpec.find("rdps") != std::string::npos)
+            m_role = ROLE_RANGE_DPS;
+        else if (m_currentSpec.find("enhance") != std::string::npos || m_currentSpec.find("mdps") != std::string::npos)
+            m_role = ROLE_MELEE_DPS;
+        else
+            m_role = ROLE_HEALER;
+    }
+    else if (my_class == CLASS_HUNTER)
+        m_role = ROLE_RANGE_DPS;
+    else if (my_class == CLASS_ROGUE)
+        m_role = ROLE_MELEE_DPS;
+    else if (my_class == CLASS_DRUID){
+        if (m_currentSpec.find("balance") != std::string::npos || m_currentSpec.find("rdps") != std::string::npos)
+            m_role = ROLE_RANGE_DPS;
+        else if (m_currentSpec.find("feral") != std::string::npos || m_currentSpec.find("mdps") != std::string::npos)
+            m_role = ROLE_MELEE_DPS;
+        else
+            m_role = ROLE_HEALER;
+    }
+    else if (my_class == CLASS_MAGE || my_class == CLASS_WARLOCK)
+        m_role = ROLE_RANGE_DPS;
+    else if (my_class == CLASS_PRIEST){
+        if (m_currentSpec.find("disc") != std::string::npos)
+            if (m_currentSpec.find("rdps") != std::string::npos)
+                m_role = ROLE_RANGE_DPS;
+            else
+                m_role = ROLE_HEALER;
+        else if (m_currentSpec.find("holy") != std::string::npos || m_currentSpec.find("healer") != std::string::npos)
+            m_role = ROLE_HEALER;
+        else
+            m_role = ROLE_RANGE_DPS;
+    }
+}
+
+void WorldBotAI::GenerateMounts(){
+    if (me->GetClass() == CLASS_WARLOCK || me->GetClass() == CLASS_PALADIN)
+        return;
+    
+    std::vector<uint32> ridingPets;
+    if (me->GetRace() == RACE_HUMAN){
+        if (me->GetLevel() == 60)
+            ridingPets = {18777, 18778, 18776}; // Swift Brown Steed, Swift White Steed, Swift Palomino
+        else if (me->GetLevel() >= 40)
+            ridingPets = {2411, 5656, 5655, 2414}; // Black Stallion Bridle, Brown Horse Bridle, Chestnut Mare Bridle, Pinto Bridle
+    }
+    else if (me->GetRace() == RACE_DWARF){
+        if (me->GetLevel() == 60)
+            ridingPets = {18786, 18787, 18785};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {5872, 5864, 5873};
+    }
+    else if (me->GetRace() == RACE_GNOME){
+        if (me->GetLevel() == 60)
+            ridingPets = {18772, 18773, 18774};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {8595, 13321, 8563, 13322};
+    }
+    else if (me->GetRace() == RACE_NIGHTELF){
+        if (me->GetLevel() == 60)
+            ridingPets = {18766, 18767, 18902};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {8632, 8631, 8629};
+    }
+    else if (me->GetRace() == RACE_ORC){
+        if (me->GetLevel() == 60)
+            ridingPets = {18796, 18798, 18797};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {5668, 5665, 1132};
+    }
+    else if (me->GetRace() == RACE_TAUREN){
+        if (me->GetLevel() == 60)
+            ridingPets = {18794, 18795, 18793};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {15290, 15277};
+    }
+    else if (me->GetRace() == RACE_UNDEAD){
+        if (me->GetLevel() == 60)
+            ridingPets = {13334, 18791};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {13332, 13333, 13331};
+    }
+    else if (me->GetRace() == RACE_TROLL){
+        if (me->GetLevel() == 60)
+            ridingPets = {18788, 18789, 18790};
+        else if (me->GetLevel() >= 40)
+            ridingPets = {8588, 8591, 8592};
+    }
+
+    if (!ridingPets.empty()){
+        uint32 itemId = SelectRandomContainerElement(ridingPets);
+        Item* pItem = Item::CreateItem(itemId, 1, me->GetObjectGuid());
+        if (!pItem){
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "WorldBotAI::GenerateMounts : can't create item #%d.", itemId);
+            return;
+        }
+        ItemPosCountVec dest;
+        uint8 destSlot;
+        if (me->CanStoreItem(INVENTORY_SLOT_BAG_0, NULL_SLOT, dest, pItem, destSlot) == EQUIP_ERR_OK)
+            me->StoreItem(dest, pItem, true);
+        else {
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "WorldBotAI::GenerateMounts : can't store item with guid %d.", pItem->GetGUIDLow());
+            return;
+        }
+        m_ridingPet = pItem;
+    }
 }

@@ -19,10 +19,10 @@
 #include "TradeData.h"
 #include "Geometry.h"
 #include "CharacterDatabaseCache.h"
+#include "ItemEnchantmentMgr.h"
+// #include "Log.h"
 
 #include <random>
-
-#include <regex>
 
 class WorldBotAI : public CombatBotBaseAI {
     public:
@@ -95,6 +95,9 @@ class WorldBotAI : public CombatBotBaseAI {
     void UpdateInCombatAI_Druid() final;
     void UpdateOutOfCombatAI_Druid() final;
 
+    // update methods (states)
+    void UpdateTravelAI();
+
     std::vector<RaidTargetIcon> m_marksToCC;
     std::vector<RaidTargetIcon> m_marksToFocus;
     ShortTimeTracker m_updateTimer;
@@ -105,14 +108,29 @@ class WorldBotAI : public CombatBotBaseAI {
     uint8 m_level = 0;
     uint32 m_mapId = 0;
     uint32 m_instanceId = 0;
+    uint32 m_honorRank = 0;
     float m_x = 0.0f;
     float m_y = 0.0f;
     float m_z = 0.0f;
     float m_o = 0.0f;
     bool m_resetSpellData = false;
 
-    
-    
+    std::string m_currentSpec;
+    Item* m_ridingPet;
+
+    // items
+    void AddRangedWeaponAmmo();
+
+    // gear
+    void GenerateGear();
+    bool GenerateInventorySlotItem(
+        std::map<uint32 /*slot*/, std::vector<ItemPrototype const*>>& itemsPerSlot,
+        uint32 invSlot, bool isNeedToEquip /* true -- equip, false -- store */);
+    void GenerateBags();
+    void GenerateMounts();
+    bool AreItemStatsRelevant(const ItemPrototype* pProto) const;
+    bool IsRandomEnchantRelevant(std::string suffx) const;
+    void GenerateInventorySlotPermEnchant(Item*);
 
     // navigation
     Position GetPolarPositionForObject(WorldObject* object, float distance, float angle);
@@ -122,7 +140,7 @@ class WorldBotAI : public CombatBotBaseAI {
     void CastEnchantSpell(uint32 spellId);
     void AddAllProfessionSpellReagents(uint32 id);
     void AddAllProfessionSpellTotems(uint32 id);
-    std::vector<const SpellEntry*> GetProfessionSpellsFilterByRegex(std::string filter) const;
+    std::vector<const SpellEntry*> GetProfessionSpellsByFilter(std::string filter) const;
     inline uint32 GetGatherProfessionId() const { return m_gatherProfession; }
     inline uint32 GetCraftProfessionId() const { return m_craftProfession; }
 
@@ -155,6 +173,7 @@ class WorldBotAI : public CombatBotBaseAI {
     ShortTimeTracker m_debugTimer;
 
     // spells
+    void InitTalentsByRandomSpec();
     void PopulateSpellData();
     void SummonRandomPet();
     bool CanPetTryToCastSpell(Unit* pTarget, const SpellEntry* pSpellEntry);

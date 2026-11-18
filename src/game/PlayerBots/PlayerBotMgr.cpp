@@ -63,6 +63,8 @@ void PlayerBotMgr::LoadConfig()
     m_confUpdateDiff = sConfig.GetIntDefault("PlayerBot.UpdateMs", 10000);
     m_confBattleBotAutoJoin = sConfig.GetBoolDefault("BattleBot.AutoJoin", false);
 
+    m_gearQuality = sConfig.GetFloatDefault("WorldBot.GearQuality", 0.5);
+
     if (!sWorld.getConfig(CONFIG_BOOL_FORCE_LOGOUT_DELAY))
         m_tempBots.clear();
 }
@@ -242,6 +244,655 @@ void PlayerBotMgr::Load()
         }while (result->NextRow());
     }
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %d worldbot taxi info entries.", m_taxiFlightNodeInfo.size());
+
+    // 13- default worldbot specs
+    // warrior tank
+    std::vector<std::pair<uint32, uint32>> talentSequence
+    {
+        {1601, 0}, {1601, 1}, {1601, 2}, {1601, 3}, {1601, 4}, // Shield Specialization
+        {142, 0}, {142, 1}, // Improved Bloodrage
+        {138, 0}, {138, 1}, {138, 2}, // Anticipation
+        {153, 0}, // Last Stand
+        {147, 0}, {147, 1}, {147, 2}, // Improved Revenge 
+        {145, 0}, // Improved Shield Block
+        {143, 0}, {143, 1}, // Improved Taunt
+        {146, 0}, {146, 1}, {146, 2}, // Improved Sunder Armor
+        {152, 0}, // Concussion Blow
+        {145, 1}, {145, 2}, // Improved Shield Block
+        {138, 3}, {138, 4}, // Anticipation
+        {144, 0}, {144, 1}, {144, 2}, {144, 3}, {144, 4}, // Defiance
+        {148, 0}, // Shield Slam
+        {124, 0}, {124, 1}, {124, 2}, // Improved Heroic Strike
+        {130, 0}, {130, 1}, // Deflection
+        {641, 0}, {641, 1}, {641, 2}, {641, 3}, {641, 4}, // Tactical Mastery
+        {137, 0}, // Anger Managment
+        {140, 0}, {140, 1}, {140, 2}, {140, 3}, {140, 4}, // Toughness
+        {130, 2}, {130, 3}, {130, 4}, // Deflection
+        {150, 0} // Improved Shield Wall
+    };
+    m_worldBotDefaultTalentSpecs["warrior_tank"] = talentSequence;
+    talentSequence.clear();
+
+    // warrior arms
+    talentSequence = {
+        {127, 0}, {127, 1}, {127, 2}, // Improved Rend
+        {124, 0}, {124, 1}, // Improved Heroic Strike
+        {641, 0}, {641, 1}, {641, 2}, {641, 3}, {641, 4}, // Tactical Mastery
+        {121, 0}, {121, 1}, {121, 2}, // Deep Wounds
+        {131, 0}, {131, 1}, // Improved Overpower
+        {662, 0}, {662, 1}, // Impale
+        {137, 0}, // Anger Managment
+        {136, 0}, {136, 1}, // Two-Handed Weapon Specialization
+        {133, 0}, // Sweeping Strikes
+        {136, 2}, {136, 3}, {136, 4}, // Two-Handed Weapon Specialization
+        {124, 2}, // Improved Heroic Strike
+        {129, 0}, {129, 1}, {129, 2}, // Improved Hamstring
+        {126, 0}, {126, 1}, // Improved Charge
+        {135, 0}, // Mortal Strike
+        {157, 0}, {157, 1}, {157, 2}, {157, 3}, {157, 4}, // Cruelty
+        {159, 0}, {159, 1}, {159, 2}, {159, 3}, {159, 4}, // Unbridled Wrath
+        {160, 0}, // Piercing Howl
+        {661, 0}, {661, 1}, {661, 2}, // Blood Craze
+        {166, 0}, // Improved Cleave
+        {1542, 0}, {1542, 1}, // Improved Execute
+        {155, 0}, {155, 1}, {155, 2} // Enrage
+    };
+    m_worldBotDefaultTalentSpecs["warrior_arms"] = talentSequence;
+    talentSequence.clear();
+    
+    // warrior fury
+    talentSequence = {
+        {157, 0}, {157, 1}, {157, 2}, {157, 3}, {157, 4}, // Cruelty
+        {159, 0}, {159, 1}, {159, 2}, {159, 3}, {159, 4}, // Unbridled Wrath
+        {160, 0}, // Piercing Howl
+        {166, 0}, {166, 1}, {166, 2}, // Improved Cleave
+        {661, 0}, // Blood Craze
+        {155, 0}, {155, 1}, {155, 2}, {155, 3}, {155, 4}, // Enrage
+        {165, 0}, // Death Wish
+        {1543, 0}, {1543, 1}, // Improved Intercept
+        {661, 1}, {661, 2}, // Blood Craze
+        {156, 0}, {156, 1}, {156, 2}, {156, 3}, {156, 4}, // Flurry
+        {167, 0}, // Blood Thirst
+        {127, 0}, {127, 1}, {127, 2}, // Improved Rend
+        {124, 0}, {124, 1}, // Improved Heroic Strike
+        {641, 0}, {641, 1}, {641, 2}, {641, 3}, {641, 4}, // Tactical Mastery
+        {137, 0}, // Anger Managment
+        {121, 0}, {121, 1}, {121, 2}, // Deep Wounds
+        {124, 2}, // Improved Heroic Strike
+        {662, 0}, {662, 1}, // Impale
+        {1542, 0}, {1542, 1}, // Improved Execute
+        {1581, 0}, // Dual Wield Specialization
+    };
+    m_worldBotDefaultTalentSpecs["warrior_fury"] = talentSequence;
+    talentSequence.clear();
+
+    // paladin holy
+    talentSequence = {
+        {1449, 0}, {1449, 1}, {1449, 2}, {1449, 3}, {1449, 4}, // Divine Intellect
+        {1432, 0}, {1432, 1}, {1432, 2}, {1432, 3}, {1432, 4}, // Spiritual Focus
+        {1435, 0}, // Consecration
+        {1444, 0}, {1444, 1}, {1444, 2}, // Healing Light
+        {1443, 0}, // Improved Lay on Hands
+        {1461, 0}, {1461, 1}, {1461, 2}, {1461, 3}, {1461, 4}, // Illumination
+        {1433, 0}, // Divine Favor
+        {1446, 0}, {1446, 1}, // Improved Blessing of Wisdom
+        {1628, 0}, {1628, 1}, // Unyielding Faith
+        {1627, 0}, {1627, 1}, {1627, 2}, {1627, 3}, {1627, 4}, // Holy Power
+        {1502, 0}, // Holy Shock
+        {1421, 0}, {1421, 1}, {1421, 2}, {1421, 3}, {1421, 4}, // Redoubt
+        {1630, 0}, {1630, 1}, {1630, 2}, // Precision
+        {1425, 0}, {1425, 1}, // Guardian's Favor
+        {1442, 0}, // Blessing of Kings
+        {1423, 0}, {1423, 1}, {1423, 2}, {1423, 3}, // Toughness
+        {1626, 0}, {1626, 1}, {1626, 2}, // Improved Concentration Aura
+        {1443, 1}, // Improved Lay on Hands
+        {1423, 4}, // Toughness
+    };
+    m_worldBotDefaultTalentSpecs["paladin_holy"] = talentSequence;
+    talentSequence.clear();
+
+    // paladin retribution
+    talentSequence = {
+        {1450, 0}, {1450, 1}, {1450, 2}, {1450, 3}, {1450, 4}, // Divine Strength
+        {1463, 0}, {1463, 1}, {1463, 2}, {1463, 3}, {1463, 4}, // Improved Seal of Righteousness
+        {1435, 0}, // Consecration
+        {1401, 0}, {1401, 1}, {1401, 2}, {1401, 3}, {1401, 4}, // Improved Blessing of Might
+        {1631, 0}, {1631, 1}, // Improved Judgement
+        {1464, 0}, {1464, 1}, {1464, 2}, // Improved Seal of the Crusader
+        {1481, 0}, // Seal of Command
+        {1634, 0}, {1634, 1}, // Pursuit of Justice
+        {1411, 0}, {1411, 1}, {1411, 2}, {1411, 3}, {1411, 4}, // Conviction
+        {1632, 0}, {1632, 1}, // Eye for an Eye
+        {1409, 0}, // Sanctity Aura
+        {1410, 0}, {1410, 1}, {1410, 2}, // Two-Handed Weapon Specialization
+        {1405, 0}, // Improved Retribution Aura
+        {1402, 0}, {1402, 1}, {1402, 2}, {1402, 3}, {1402, 4}, // Vengeance
+        {1441, 0}, // Repentance
+        {1405, 1}, // Improved Retribution Aura
+        {1422, 0}, {1422, 1}, {1422, 2}, {1422, 3}, {1422, 4}, // Improved Devotion Aura
+        {1630, 0}, {1630, 1}, {1630, 2}, // Precision
+    };
+    m_worldBotDefaultTalentSpecs["paladin_retri"] = talentSequence;
+    talentSequence.clear();
+
+    // shaman elementary
+    talentSequence = {
+        {563, 0}, {563, 1}, {563, 2}, {563, 3}, {563, 4}, // Concussion
+        {561, 0}, {561, 1}, {561, 2}, // Call of Flame
+        {572, 0}, {572, 1}, // Earth's Grasp
+        {574, 0}, // Elemental Focus
+        {562, 0}, {562, 1}, {562, 2}, {562, 3}, // Call of Thunder
+        {567, 0}, {567, 1}, // Improved Fire Totems
+        {1642, 0}, {1642, 1}, {1642, 2}, // Eye of the Storm
+        {565, 0}, // Elemental Fury
+        {1641, 0}, {1641, 1}, // Storm Reach
+        {562, 4}, // Call of Thunder
+        {564, 0}, // Convection
+        {721, 0}, {721, 1}, {721, 2}, {721, 3}, {721, 4}, // Lightning Mastery
+        {573, 0}, // Elemental Mastery
+        {586, 0}, {586, 1}, {586, 2}, {586, 3}, {586, 4}, // Improved Healing Wave
+        {589, 0}, {589, 1}, // Improved Reincarnation
+        {595, 0}, {595, 1}, {595, 2}, // Totemic Focus
+        {582, 0}, // Totemic Mastery
+        {564, 1}, {564, 2}, {564, 3}, {564, 4}, // Convection
+        {614, 0}, {614, 1}, {614, 2}, {614, 3}, {614, 4}, // Ancestral Knowledge
+    };
+    m_worldBotDefaultTalentSpecs["shaman_elem"] = talentSequence;
+    talentSequence.clear();
+
+    // shaman enhancement
+    talentSequence = {
+        {614, 0}, {614, 1}, {614, 2}, {614, 3}, {614, 4}, // Ancestral Knowledge
+        {605, 0}, {605, 1}, // Improved Ghost Wolf
+        {613, 0}, {613, 1}, {613, 2}, // Thundering Strikes
+        {617, 0}, // Two-Handed Axes and Maces
+        {613, 3}, {613, 4}, // Thundering Strikes
+        {610, 0}, {610, 1}, // Enhancing Totems
+        {602, 0}, {602, 1}, {602, 2}, {602, 3}, {602, 4}, // Flurry
+        {611, 0}, {611, 1}, {611, 2}, // Elemental Weapons
+        {1647, 0}, {1647, 1}, // Improved Weapon Totems
+        {1643, 0}, {1643, 1}, {1643, 2}, {1643, 3}, {1643, 4}, // Weapon Mastery
+        {901, 0}, // Stormstrike
+        {586, 0}, {586, 1}, {586, 2}, {586, 3}, {586, 4}, // Improved Healing Wave
+        {589, 0}, {589, 1}, // Improved Reincarnation
+        {595, 0}, {595, 1}, {595, 2}, // Totemic Focus
+        {583, 0}, {583, 1}, {583, 2}, // Nature's Guidance
+        {582, 0}, // Totemic Mastery
+        {616, 0}, // Parry
+        {563, 0}, {563, 1}, {563, 2}, {563, 3}, {563, 4}, // Concussion
+    };
+    m_worldBotDefaultTalentSpecs["shaman_enhance"] = talentSequence;
+    talentSequence.clear();
+
+    // shaman restoration
+    talentSequence = {
+        {586, 0}, {586, 1}, {586, 2}, {586, 3}, {586, 4}, // Improved Healing Wave
+        {595, 0}, {595, 1}, {595, 2}, {595, 3}, {595, 4}, // Totemic Focus
+        {582, 0}, // Totemic Mastery
+        {587, 0}, {587, 1}, {587, 2}, {587, 3}, // Healing Focus
+        {588, 0}, {588, 1}, {588, 2}, {588, 3}, {588, 4}, // Restorative Totems
+        {591, 0}, // Nature's Swiftness
+        {1648, 0}, {1648, 1}, {1648, 2}, // Healing Way
+        {587, 4}, // Healing Focus
+        {592, 0}, {592, 1}, {592, 2}, {592, 3}, {592, 4}, // Purification
+        {590, 0}, // Mana Tide Totem
+        {594, 0}, {594, 1}, {594, 2}, {594, 3}, {594, 4}, // Tidal Mastery
+        {581, 0}, {581, 1}, {581, 2}, // Ancestral Healing
+        {589, 0}, {589, 1}, // Improved Reincarnation
+        {593, 0}, {593, 1}, {593, 2}, {593, 3}, {593, 4}, // Tidal Focus
+        {614, 0}, {614, 1}, {614, 2}, {614, 3}, {614, 4}, // Ancestral Knowledge
+    };
+    m_worldBotDefaultTalentSpecs["shaman_resto"] = talentSequence;
+    talentSequence.clear();
+
+    // hunter beastmaster
+    talentSequence = {
+        {1382, 0}, {1382, 1}, {1382, 2}, {1382, 3}, {1382, 4}, // Improved Aspect of the Hawk
+        {1395, 0}, {1395, 1}, {1395, 2}, // Thick Hide
+        {1625, 0}, {1625, 1}, // Improved Revive Pet
+        {1391, 0}, // Bestial Swiftness
+        {1396, 0}, {1396, 1}, {1396, 2}, {1396, 3}, // Unleashed Fury
+        {1393, 0}, {1393, 1}, {1393, 2}, {1393, 3}, {1393, 4}, // Ferocity
+        {1387, 0}, // Intimidation
+        {1388, 0}, {1388, 1}, // Spirit Bond
+        {1390, 0}, {1390, 1}, // Bestial Discipline
+        {1397, 0}, {1397, 1}, {1397, 2}, {1397, 3}, {1397, 4}, // Frenzy
+        {1386, 0}, // Bestial Wrath
+        {1396, 4}, // Unleashed Fury
+        {1341, 0}, {1341, 1}, {1341, 2}, {1341, 3}, {1341, 4}, // Improved Concussive Shot
+        {1344, 0}, {1344, 1}, {1344, 2}, {1344, 3}, {1344, 4}, // Lethal Shots
+        {1345, 0}, // Aimed Shot
+        {1352, 0}, {1352, 1}, {1352, 2}, // Hawk Eye
+        {1343, 0}, // Improved Hunter's Mark
+        {1349, 0}, {1349, 1}, {1349, 2}, {1349, 3}, // Mortal Shots
+    };
+    m_worldBotDefaultTalentSpecs["hunter_bm"] = talentSequence;
+    talentSequence.clear();
+
+    // hunter marksmanship
+    talentSequence = {
+        {1341, 0}, {1341, 1}, {1341, 2}, {1341, 3}, {1341, 4}, // Improved Concussive Shot
+        {1344, 0}, {1344, 1}, {1344, 2}, {1344, 3}, {1344, 4}, // Lethal Shots
+        {1345, 0}, // Aimed Shot
+        {1352, 0}, {1352, 1}, {1352, 2}, // Hawk Eye
+        {1343, 0}, // Improved Hunter's Mark
+        {1349, 0}, {1349, 1}, {1349, 2}, {1349, 3}, {1349, 4}, // Mortal Shots
+        {1353, 0}, // Scatter Shot
+        {1347, 0}, {1347, 1}, {1347, 2}, // Barrage
+        {1343, 1}, // Improved Hunter's Mark
+        {1362, 0}, {1362, 1}, {1362, 2}, {1362, 3}, {1362, 4}, // Ranged Weapon Specialization
+        {1361, 0}, // Trueshot Aura
+        {1301, 0}, {1301, 1}, {1301, 2}, // Humanoid Slaying
+        {1311, 0}, {1311, 1}, // Deflection
+        {1304, 0}, {1304, 1}, {1304, 2}, {1304, 3}, {1304, 4}, // Entrapment
+        {1308, 0}, // Deterrence
+        {1306, 0}, {1306, 1}, // Clever Traps
+        {1343, 2}, {1343, 3}, {1343, 4}, // Improved Hunter's Mark
+        {1382, 0}, {1382, 1}, {1382, 2}, {1382, 3}, // Improved Aspect of the Hawk
+    };
+    m_worldBotDefaultTalentSpecs["hunter_mm"] = talentSequence;
+    talentSequence.clear();
+
+    // hunter survival
+    talentSequence = {
+        {1311, 0}, {1311, 1}, {1311, 2}, {1311, 3}, {1311, 4}, // Deflection
+        {1621, 0}, {1621, 1}, // Savage Strikes
+        {1305, 0}, {1305, 1}, {1305, 2}, // Improved Wing Clip
+        {1308, 0}, // Deterrence
+        {1305, 3}, {1305, 4}, // Improved Wing Clip
+        {1622, 0}, {1622, 1}, // Survivalist
+        {1310, 0}, {1310, 1}, {1310, 2}, // Surefooted
+        {1622, 2}, {1622, 3}, // Survivalist
+        {1312, 0}, // Counterattack
+        {1321, 0}, {1321, 1}, {1321, 2}, // Killer Instinct
+        {1622, 4}, // Survivalist
+        {1341, 0}, {1341, 1}, {1341, 2}, {1341, 3}, {1341, 4}, // Improved Concussive Shot
+        {1344, 0}, {1344, 1}, {1344, 2}, {1344, 3}, {1344, 4}, // Lethal Shots
+        {1345, 0}, // Aimed Shot
+        {1352, 0}, {1352, 1}, {1352, 2}, // Hawk Eye
+        {1342, 0}, // Efficiency
+        {1349, 0}, {1349, 1}, {1349, 2}, {1349, 3}, {1349, 4}, // Mortal Shots
+        {1353, 0}, // Scatter Shot
+        {1303, 0}, {1303, 1}, {1303, 2}, {1303, 3}, {1303, 4} // Lightning Reflexes
+    };
+    m_worldBotDefaultTalentSpecs["hunter_surv"] = talentSequence;
+    talentSequence.clear();
+
+    // rogue assasination
+    talentSequence = {
+        {272, 0}, {272, 1}, // Remorseless Attacks
+        {276, 0}, {276, 1}, {276, 2}, // Improved Eviscerate
+        {273, 0}, {273, 1}, {273, 2}, // Ruthlessness
+        {274, 0}, {274, 1}, // Murder
+        {281, 0}, // Relentless Strikes
+        {270, 0}, {270, 1}, {270, 2}, {270, 3}, // Malice
+        {268, 0}, {268, 1}, {268, 2}, {268, 3}, {268, 4}, // Improved Poisons
+        {280, 0}, // Cold Blood
+        {270, 4}, // Malice
+        {269, 0}, {269, 1}, {269, 2}, // Lethality
+        {283, 0}, {283, 1}, {283, 2}, {283, 3}, {283, 4}, // Seal Fate
+        {382, 0}, // Vigor
+        {269, 3}, {269, 4}, // Lethality
+        {203, 0}, {203, 1}, {203, 2}, // Improved Gouge
+        {201, 0}, {201, 1}, // Improved Sinister Strike
+        {202, 0}, {202, 1}, {202, 2}, // Improved Backstab
+        {241, 0}, {241, 1}, {241, 2}, {241, 3}, {241, 4}, // Master of Deception
+        {261, 0}, {261, 1}, {261, 2}, {261, 3}, {261, 4}, // Opportunity
+    };
+    m_worldBotDefaultTalentSpecs["rogue_assa"] = talentSequence;
+    talentSequence.clear();
+
+    talentSequence = {
+        {201, 0}, {201, 1}, // Improved Sinister Strike
+        {203, 0}, {203, 1}, {203, 2}, // Improved Gouge
+        {187, 0}, {187, 1}, {187, 2}, {187, 3}, {187, 4}, // Deflection
+        {301, 0}, // Riposte
+        {181, 0}, {181, 1}, {181, 2}, {181, 3}, {181, 4}, // Precision
+        {221, 0}, {221, 1}, {221, 2}, {221, 3}, // Dual Wield Specialization
+        {223, 0}, // Blade Flurry
+        {221, 4}, // Dual Wield Specialization
+        {222, 0}, {222, 1}, // Improved Sprint
+        {204, 0}, // Endurance
+        {1703, 0}, {1703, 1}, // Weapon Expertise
+        {1122, 0}, {1122, 1}, {1122, 2}, // Aggression
+        {205, 0}, // Adrenaline Rush
+        {270, 0}, {270, 1}, {270, 2}, {270, 3}, {270, 4}, // Malice
+        {273, 0}, {273, 1}, {273, 2}, // Ruthlessness
+        {274, 0}, {274, 1}, // Murder
+        {269, 0}, {269, 1}, {269, 2}, {269, 3}, {269, 4}, // Lethality
+        {241, 0}, {241, 1}, {241, 2}, {241, 3}, {241, 4}, // Master of Deception
+    };
+    m_worldBotDefaultTalentSpecs["rogue_combat"] = talentSequence;
+    talentSequence.clear();
+
+    // rogue hemorrhage
+    talentSequence = {
+        {241, 0}, {241, 1}, {241, 2}, {241, 3}, {241, 4}, // Master of Deception
+        {244, 0}, {244, 1}, {244, 2}, {244, 3}, {244, 4}, // Camouflage
+        {245, 0}, {245, 1}, {245, 2}, // Initiative
+        {303, 0}, // Ghostly Strike
+        {247, 0}, // Elusiveness
+        {1123, 0}, {1123, 1}, {1123, 2}, // Serrated Blades
+        {262, 0}, {262, 1}, // Improved Sap
+        {681, 0}, // Hemorrhage
+        {284, 0}, // Preparation
+        {262, 2}, // Improved Sap
+        {265, 0}, {265, 1}, // Dirty Deeds
+        {1701, 0}, {1701, 1}, // Heightened Senses
+        {270, 0}, {270, 1}, {270, 2}, {270, 3}, {270, 4}, // Malice
+        {273, 0}, {273, 1}, {273, 2}, // Ruthlessness
+        {274, 0}, {274, 1}, // Murder
+        {281, 0}, // Relentless Strikes
+        {269, 0}, {269, 1}, {269, 2}, {269, 3}, {269, 4}, // Lethality
+        {276, 0}, {276, 1}, {276, 2}, // Improved Eviscerate
+        {268, 0}, // Improved Poisons
+        {280, 0}, // Cold Blood
+        {203, 0}, {203, 1}, {203, 2}, // Improved Gouge
+    };
+    m_worldBotDefaultTalentSpecs["rogue_hemo"] = talentSequence;
+    talentSequence.clear();
+
+    // druid balance
+    talentSequence = {
+        {761, 0}, // Nature's Grasp
+        {921, 0}, {921, 1}, {921, 2}, {921, 3}, // Improved Nature's Grasp
+        {763, 0}, {763, 1}, {763, 2}, {763, 3}, {763, 4}, // Improved Moonfire
+        {764, 0}, {764, 1}, // Nature's Reach
+        {762, 0}, {762, 1}, {762, 2}, // Improved Wrath
+        {784, 0}, {784, 1}, {784, 2}, {784, 3}, {784, 4}, // Improved Starfire
+        {789, 0}, // Nature's Grace
+        {792, 0}, {792, 1}, {792, 2}, {792, 3}, // Vengeance
+        {790, 0}, {790, 1}, {790, 2}, {790, 3}, {790, 4}, // Moonfury
+        {793, 0}, // Moonkin Form
+        {821, 0}, {821, 1}, {821, 2}, {821, 3}, {821, 4}, // Improved Mark of the Wild
+        {824, 0}, {824, 1}, {824, 2}, {824, 3}, {824, 4}, // Improved Healing Touch
+        {827, 0}, // Insect Swarm
+        {829, 0}, {829, 1}, {829, 2}, // Reflection
+        {792, 4}, // Vengeance
+        {783, 0}, {783, 1}, {783, 2}, // Moonglow
+        {762, 3}, {762, 4}, // Improved Wrath
+    };
+    m_worldBotDefaultTalentSpecs["druid_balance"] = talentSequence;
+    talentSequence.clear();
+
+    // druid feral
+    talentSequence = {
+        {796, 0}, {796, 1}, {796, 2}, {796, 3}, {796, 4}, // Ferocity
+        {799, 0}, {799, 1}, {799, 2}, {799, 3}, {799, 4}, // Feral Instinct
+        {807, 0}, {807, 1}, // Feline Swiftness
+        {798, 0}, {798, 1}, {798, 2}, // Sharpened Claws
+        {800, 0}, {800, 1}, // Blood Frenzy
+        {803, 0}, {803, 1}, {803, 2}, // Predatory Strikes
+        {1162, 0}, // Faerie Fire (Feral)
+        {805, 0}, {805, 1}, // Savage Fury
+        {802, 0}, {802, 1}, // Improved Shred
+        {808, 0}, {808, 1}, {808, 2}, {808, 3}, {808, 4}, // Heart of the Wild
+        {809, 0}, // Leader of the Pack
+        {822, 0}, {822, 1}, {822, 2}, {822, 3}, {822, 4}, // Furor
+        {761, 0}, // Nature's Grasp
+        {921, 0}, {921, 1}, {921, 2}, {921, 3}, // Improved Nature's Grasp
+        {781, 0}, {781, 1}, {781, 2}, // Natural Shapeshifter
+        {791, 0}, {791, 1}, {791, 2}, {791, 3}, {791, 4}, // Natural Weapons
+        {788, 0}, // Omen of Clarity
+        {804, 0}, // Feral Charge
+    };
+    m_worldBotDefaultTalentSpecs["druid_feral_cat"] = talentSequence;
+    talentSequence.clear();
+
+    // druid restoration
+    talentSequence = {
+        {821, 0}, {821, 1}, {821, 2}, {821, 3}, {821, 4}, // Improved Mark of the Wild
+        {823, 0}, {823, 1}, {823, 2}, {823, 3}, {823, 4}, // Nature's Focus
+        {827, 0}, // Insect Swarm
+        {824, 0}, {824, 1}, {824, 2}, {824, 3}, // Improved Healing Touch
+        {843, 0}, {843, 1}, {843, 2}, {843, 3}, // Tranquil Spirit
+        {824, 4}, // Improved Healing Touch
+        {831, 0}, // Nature's Swiftness
+        {828, 0}, {828, 1}, {828, 2}, // Gift of Nature
+        {843, 4}, // Tranquil Spirit
+        {825, 0}, {825, 1}, {825, 2}, {825, 3}, {825, 4}, // Improved Regrowth
+        {844, 0}, // Swiftmend
+        {828, 3}, {828, 4}, // Gift of Nature
+        {829, 0}, {829, 1}, {829, 2}, // Reflection
+        {830, 0}, {830, 1}, {830, 2}, // Improved Rejuvenation
+        {841, 0}, {841, 1}, {841, 2}, {841, 3}, {841, 4}, // Subtlety
+        {842, 0}, {842, 1}, // Improved Tranquility
+        {761, 0}, // Nature's Grasp
+        {921, 0}, {921, 1}, {921, 2}, {921, 3} // Improved Nature's Grasp
+    };
+    m_worldBotDefaultTalentSpecs["druid_resto"] = talentSequence;
+    talentSequence.clear();
+
+    // mage arcane
+    talentSequence = {
+        {80, 0}, {80, 1}, {80, 2}, {80, 3}, {80, 4}, // Improved Arcane Missiles
+        {75, 0}, {75, 1}, {75, 2}, {75, 3}, {75, 4}, // Arcane Concentration
+        {85, 0}, // Arcane Resilience
+        {74, 0}, {74, 1}, // Arcane Subtlety
+        {81, 0}, {81, 1}, // Improved Arcane Explosion
+        {88, 0}, {88, 1}, // Improved Counterspell
+        {83, 0}, {83, 1}, // Improved Mana Shield
+        {81, 2}, // Improved Arcane Explosion
+        {86, 0}, // Presence of Mind
+        {77, 0}, {77, 1}, {77, 2}, {77, 3}, // Arcane Mind
+        {421, 0}, {421, 1}, {421, 2}, // Arcane Instability
+        {77, 4}, // Arcane Mind
+        {1142, 0}, // Arcane Meditation
+        {87, 0}, // Arcane Power
+        {1142, 1}, {1142, 2}, // Arcane Meditation
+        {30, 0}, {30, 1}, {30, 2}, {30, 3}, {30, 4}, // Impact
+        {34, 0}, {34, 1}, {34, 2}, {34, 3}, {34, 4}, // Ignite
+        {29, 0}, // Pyroblast
+        {1650, 0}, {1650, 1}, {1650, 2}, {1650, 3}, {1650, 4}, // Magic Absorption
+        {82, 0}, {82, 1}, // Magic Attunement
+    };
+    m_worldBotDefaultTalentSpecs["mage_arcane"] = talentSequence;
+    talentSequence.clear();
+
+    // mage fire
+    talentSequence = {
+        {26, 0}, {26, 1}, {26, 2}, {26, 3}, {26, 4}, // Improved Fireball
+        {28, 0}, {28, 1}, // Flame Throwing
+        {27, 0}, {27, 1}, {27, 2}, // Improved Fire Blast
+        {29, 0}, // Pyroblast
+        {1141, 0}, {1141, 1}, // Incinerate
+        {34, 0}, {34, 1}, // Ignite
+        {25, 0}, {25, 1}, {25, 2}, // Improved Scorch
+        {34, 2}, {34, 3}, // Ignite
+        {32, 0}, // Blast Wave
+        {33, 0}, {33, 1}, {33, 2}, // Critical Mass
+        {34, 4}, // Ignite
+        {35, 0}, {35, 1}, {35, 2}, {35, 3}, {35, 4}, // Fire Power
+        {36, 0}, // Combustion
+        {74, 0}, {74, 1}, // Arcane Subtlety
+        {76, 0}, {76, 1}, {76, 2}, // Arcane Focus
+        {75, 0}, {75, 1}, {75, 2}, {75, 3}, {75, 4}, // Arcane Concentration
+        {1650, 0}, {1650, 1}, {1650, 2}, {1650, 3}, {1650, 4}, // Magic Absorption
+        {88, 0}, {88, 1}, // Improved Counterspell
+        {1142, 0}, {1142, 1}, {1142, 2} // Arcane Meditation
+    };
+    m_worldBotDefaultTalentSpecs["mage_fire"] = talentSequence;
+    talentSequence.clear();
+
+    // mage frost
+    talentSequence = {
+        {37, 0}, {37, 1}, {37, 2}, {37, 3}, {37, 4}, // Improved Frostbolt
+        {65, 0}, {65, 1}, {65, 2}, // Permafrost
+        {62, 0}, {62, 1}, // Improved Frost Nova
+        {69, 0}, // Cold Snap
+        {38, 0}, {38, 1}, {38, 2}, // Frostbite
+        {63, 0}, // Improved Blizzard
+        {67, 0}, {67, 1}, {67, 2}, {67, 3}, {67, 4}, // Shatter
+        {72, 0}, // Ice Block
+        {63, 1}, {63, 2}, // Improved Blizzard
+        {73, 0}, {73, 1}, // Ice Shards
+        {68, 0}, {68, 1}, {68, 2}, {68, 3}, {68, 4}, // Winter's Chill
+        {71, 0}, // Ice Barrier
+        {73, 2}, {73, 3}, {73, 4}, // Ice Shards
+        {741, 0}, {741, 1}, // Arctic Reach
+        {61, 0}, {61, 1}, {61, 2}, // Piercing Ice
+        {74, 0}, {74, 1}, // Arcane Subtlety
+        {76, 0}, {76, 1}, {76, 2}, // Arcane Focus
+        {75, 0}, {75, 1}, {75, 2}, {75, 3}, {75, 4}, // Arcane Concentration
+        {1649, 0}, {1649, 1}, // Elemental Precision
+    };
+    m_worldBotDefaultTalentSpecs["mage_frost"] = talentSequence;
+    talentSequence.clear();
+
+    // warlock affliction
+    talentSequence = {
+        {1003, 0}, {1003, 1}, {1003, 2}, {1003, 3}, {1003, 4}, // Improved Corruption
+        {1004, 0}, {1004, 1}, {1004, 2}, {1004, 3}, {1004, 4}, // Improved Drain Life
+        {1061, 0}, // Amplify Curse
+        {1001, 0}, {1001, 1}, {1001, 2}, {1001, 3}, // Fel Concentration
+        {1002, 0}, {1002, 1}, // Nightfall
+        {1001, 4}, // Fel Concentration
+        {1021, 0}, {1021, 1}, // Grim Reach
+        {1081, 0}, // Curse of Exhaustion
+        {1041, 0}, // Siphon Life
+        {1082, 0}, {1082, 1}, {1082, 2}, {1082, 3}, // Improved Curse of Exhaustion
+        {1042, 0}, {1042, 1}, {1042, 2}, {1042, 3}, {1042, 4}, // Shadow Mastery
+        {944, 0}, {944, 1}, {944, 2}, {944, 3}, {944, 4}, // Improved Shadow Bolt
+        {943, 0}, {943, 1}, {943, 2}, {943, 3}, {943, 4}, // Bane
+        {963, 0}, // Shadowburn
+        {1005, 0}, {1005, 1}, {1005, 2}, {1005, 3}, {1005, 4}, // Suppression
+        {1221, 0}, {1221, 1}, // Improved Healthstone
+        {1007, 0}, {1007, 1}, // Improved Life Tap
+    };
+    m_worldBotDefaultTalentSpecs["warlock_affli"] = talentSequence;
+    talentSequence.clear();
+
+    // warlock demonology
+    talentSequence = {
+        {1222, 0}, {1222, 1}, {1222, 2}, // Improved Imp
+        {1221, 0}, {1221, 1}, // Improved Healthstone
+        {1242, 0}, {1242, 1}, {1242, 2}, {1242, 3}, {1242, 4}, // Fel Intellect
+        {1226, 0}, // Fel Domination
+        {1224, 0}, {1224, 1}, // Improved Health Funnel
+        {1223, 0}, {1223, 1}, // Demonic Embrace
+        {1227, 0}, {1227, 1}, // Master Summoner
+        {1262, 0}, {1262, 1}, {1262, 2}, // Unholy Power
+        {1281, 0}, // Demonic Sacrifice
+        {1262, 3}, {1262, 4}, // Unholy Power
+        {1223, 2}, {1223, 3}, // Demonic Embrace
+        {1244, 0}, {1244, 1}, {1244, 2}, {1244, 3}, {1244, 4}, // Master Demonologist
+        {1282, 0}, // Soul Link
+        {944, 0}, {944, 1}, {944, 2}, {944, 3}, {944, 4}, // Improved Shadow Bolt
+        {943, 0}, {943, 1}, {943, 2}, {943, 3}, {943, 4}, // Bane
+        {963, 0}, // Shadowburn
+        {1003, 0}, {1003, 1}, {1003, 2}, {1003, 3}, {1003, 4}, // Improved Corruption
+        {1005, 0}, {1005, 1}, {1005, 2}, {1005, 3}, // Suppression
+    };
+    m_worldBotDefaultTalentSpecs["warlock_demon"] = talentSequence;
+    talentSequence.clear();
+
+    // warlock destruction
+    talentSequence = {
+        {944, 0}, {944, 1}, {944, 2}, {944, 3}, {944, 4}, // Improved Shadow Bolt
+        {943, 0}, {943, 1}, {943, 2}, {943, 3}, {943, 4}, // Bane
+        {963, 0}, // Shadowburn
+        {1003, 0}, {1003, 1}, {1003, 2}, {1003, 3}, {1003, 4}, // Improved Corruption
+        {1007, 0}, {1007, 1}, // Improved Life Tap
+        {981, 0}, {981, 1}, {981, 2}, {981, 3}, // Devastation
+        {964, 0}, {964, 1}, // Destructive Reach
+        {985, 0}, {985, 1}, // Intensity
+        {981, 4}, // Devastation
+        {967, 0}, // Ruin
+        {961, 0}, {961, 1}, {961, 2}, {961, 3}, {961, 4}, // Improved Immolate
+        {966, 0}, {966, 1}, {966, 2}, {966, 3}, // Emberstorm
+        {968, 0}, // Conflagrate
+        {966, 4}, // Emberstorm
+        {1005, 0}, {1005, 1}, {1005, 2}, // Suppression
+        {1061, 0}, // Amplify Curse
+        {1221, 0}, {1221, 1}, // Improved Healthstone
+        {982, 0}, {982, 1}, {982, 2}, {982, 3}, {982, 4}, // Aftermath
+        {986, 0}, // Pyroclasm
+    };
+    m_worldBotDefaultTalentSpecs["warlock_destr"] = talentSequence;
+    talentSequence.clear();
+
+    // priest discipline
+    talentSequence = {
+        {342, 0}, {342, 1}, {342, 2}, {342, 3}, {342, 4}, // Unbreakable Will
+        {343, 0}, {343, 1}, {343, 2}, // Improved Power Word: Shield
+        {344, 0}, {344, 1}, // Improved Power Word: Fortitude
+        {348, 0}, // Inner Focus
+        {347, 0}, {347, 1}, {347, 2}, // Meditation
+        {321, 0}, // Martyrdom
+        {346, 0}, {346, 1}, {346, 2}, // Improved Inner Fire
+        {350, 0}, {350, 1}, // Improved Mana Burn
+        {351, 0}, // Divine Spirit
+        {1201, 0}, {1201, 1}, {1201, 2}, {1201, 3}, {1201, 4}, // Mental Strength
+        {1202, 0}, {1202, 1}, {1202, 2}, {1202, 3}, // Force of Will
+        {322, 0}, // Power Infusion
+        {401, 0}, {401, 1}, {401, 2}, {401, 3}, {401, 4}, // Holy Specialization
+        {1181, 0}, {1181, 1}, {1181, 2}, {1181, 3}, {1181, 4}, // Divine Fury
+        {442, 0}, // Holy Nova
+        {1636, 0}, {1636, 1}, {1636, 2}, // Blessed Recovery
+        {406, 0}, // Improved Renew
+        {403, 0}, {403, 1}, // Searing Light
+        {1635, 0}, {1635, 1}, // Holy Reach
+        {1202, 4}, // Force of Will
+    };
+    m_worldBotDefaultTalentSpecs["priest_disc"] = talentSequence;
+    talentSequence.clear();
+
+    // priest holy
+    talentSequence = {
+        {406, 0}, {406, 1}, {406, 2}, // Improved Renew
+        {410, 0}, {410, 1}, // Healing Focus
+        {401, 0}, {401, 1}, {401, 2}, {401, 3}, {401, 4}, // Holy Specialization
+        {442, 0}, // Holy Nova
+        {361, 0}, {361, 1}, {361, 2}, // Inspiration
+        {1636, 0}, // Blessed Recovery
+        {408, 0}, {408, 1}, {408, 2}, // Improved Healing
+        {1636, 1}, {1636, 2}, // Blessed Recovery
+        {1561, 0}, // Spirit of Redemption
+        {413, 0}, {413, 1}, // Improved Prayer of Healing
+        {402, 0}, {402, 1}, // Spiritual Guidance
+        {404, 0}, {404, 1}, {404, 2}, {404, 3}, {404, 4}, // Spiritual Healing
+        {1637, 0}, // Lightwell
+        {402, 2}, {402, 3}, {402, 4}, // Spiritual Guidance
+        {342, 0}, {342, 1}, {342, 2}, {342, 3}, {342, 4}, // Unbreakable Will
+        {343, 0}, {343, 1}, {343, 2}, // Improved Power Word: Shield
+        {344, 0}, {344, 1}, // Improved Power Word: Fortitude
+        {348, 0}, // Inner Focus
+        {347, 0}, {347, 1}, {347, 2}, // Meditation
+        {321, 0}, // Martyrdom
+        {1635, 0}, {1635, 1}, // Holy Reach
+    };
+    m_worldBotDefaultTalentSpecs["priest_holy"] = talentSequence;
+    talentSequence.clear();
+
+    // priest shadow
+    talentSequence = {
+        {464, 0}, {464, 1}, {464, 2}, {464, 3}, {464, 4}, // Blackout
+        {482, 0}, {482, 1}, // Improved Shadow Word: Pain
+        {463, 0}, {463, 1}, {463, 2}, // Shadow Focus
+        {501, 0}, // Mind Flay
+        {542, 0}, {542, 1}, // Improved Psychic Scream
+        {463, 3}, {463, 4}, // Shadow Focus
+        {881, 0}, {881, 1}, {881, 2}, // Shadow Reach
+        {461, 0}, {461, 1}, // Shadow Weaving
+        {541, 0}, // Silence
+        {484, 0}, // Vampiric Embrace
+        {1638, 0}, {1638, 1}, // Improved Vampiric Embrace
+        {461, 2}, // Shadow Weaving
+        {462, 0}, {462, 1}, {462, 2}, {462, 3}, {462, 4}, // Darkness
+        {521, 0}, // Shadowform
+        {342, 0}, {342, 1}, {342, 2}, {342, 3}, {342, 4}, // Unbreakable Will
+        {343, 0}, {343, 1}, {343, 2}, // Improved Power Word: Shield
+        {344, 0}, {344, 1}, // Improved Power Word: Fortitude
+        {348, 0}, // Inner Focus
+        {347, 0}, {347, 1}, {347, 2}, // Meditation
+        {321, 0}, // Martyrdom
+        {350, 0}, {350, 1}, // Improved Mana Burn
+        {461, 3}, {461, 4}, // Shadow Weaving
+        {321, 1}, // Martyrdom
+    };
+    m_worldBotDefaultTalentSpecs["priest_shadow"] = talentSequence;
+    talentSequence.clear();
+
 
     m_statsTimer.Reset(-1);
 }
@@ -1142,16 +1793,16 @@ std::vector<uint32> PlayerBotMgr::GetSafeSpawnNodes(Team team, uint32 level){
             locNames = {"Aldrassil", "Northshire", "Coldridge"};
         
         else if (level <= 12)
-            locNames = {"Elwynn", "Teldrassil", "Dun Morogh"};
+            locNames = {"Goldshire", "Stormwind", "Darnassus", "Dolanaar", "Ironforge", "Kharanos"};
 
         else if (level <= 20)
-            locNames = {"Westfall", "Darkshore", "Loch Modan"};
+            locNames = {"Stormwind", "Sentinel", "Darnassus", "Auberdine", "Ironforge", "Thelsamar"};
 
         else if (level <= 25)
-            locNames = {"Redridge", "Darkshire", "Menethil", "Southshore", "Astranaar"};
+            locNames = {"Lakeshire", "Darkshire", "Menethil Harbor", "Southshore", "Astranaar"};
 
         else if (level <= 30)
-            locNames = {"Duskwood", "Astranaar", "Menethil", "Stonetalon Peak"};
+            locNames = {"Darkshire", "Astranaar", "Menethil", "Stonetalon Peak"};
 
         else if (level <= 35)
             locNames = {"Refuge Pointe", "Rebel Camp", "Southshore", "Nijels"};
@@ -1166,10 +1817,10 @@ std::vector<uint32> PlayerBotMgr::GetSafeSpawnNodes(Team team, uint32 level){
             locNames = {"Aerie", "Thorium Point", "Gadgetzan", "Feathermoon", "Thalanaar", "Nether"};
 
         else if (level <= 55)
-            locNames = {"Nether", "Marshals", "Talrendis", "Talonbranch", "Chillwind Camp", "Deadwind", "Morgans Vigil"};
+            locNames = {"Nether", "Talrendis", "Talonbranch", "Chillwind Camp", "Morgans Vigil"};
 
         else if (level <= 60)
-            locNames = {"Chillwind Camp", "Lights", "Morgans Vigil", "Deadwind", "Everlook", "Cenarion Hold"};
+            locNames = {"Chillwind Camp", "Lights", "Morgans Vigil", "Everlook", "Cenarion Hold"};
     }
     else if (team == HORDE){
         // Razorofen Downs, Razorfen Kraul, Astranaar, Southshore, Stonetalon Peak, Refuge Pointe, Rebel Camp, Nijels Point,
@@ -1180,16 +1831,16 @@ std::vector<uint32> PlayerBotMgr::GetSafeSpawnNodes(Team team, uint32 level){
             locNames = {"Valley of Trials", "Red Cloud Mesa", "Deathknell"};
 
         else if (level <= 12)
-            locNames = {"Durotar", "Mulgor", "Tirisfal Glades"};
+            locNames = {"Razor Hill", "Orgrimmar", "Bloodhoof Village", "Thunder Bluff", "Undercity", "Brill"};
 
         else if (level <= 20)
-            locNames = {"Barrens", "Silverpine"};
+            locNames = {"Crossroads", "Sepulcher"};
 
         else if (level <= 25)
             locNames = {"Zoramgar", "Sun Rock", "Tarren", "Taurajo"};
         
         else if (level <= 30)
-            locNames = {"Zoramgar", "Splintertree", "Freewind", "Tarren", "Stonetalon"};
+            locNames = {"Zoramgar", "Splintertree", "Freewind", "Tarren", "Sun Rock"};
 
         else if (level <= 35)
             locNames = {"Freewind", "Hammerfall", "Tarren", "Gromgol", "Ghost"};
@@ -1204,16 +1855,15 @@ std::vector<uint32> PlayerBotMgr::GetSafeSpawnNodes(Team team, uint32 level){
             locNames = {"Mojache", "Gadgetzan", "Revantusk", "Thorium Point", "Stonard"};
 
         else if (level <= 55)
-            locNames = {"Bulwark", "Deadwind", "Flame Crest", "Marshals", "Bloodvenom", "Valormok", "Kargath"};
+            locNames = {"Bulwark", "Flame Crest", "Bloodvenom", "Valormok", "Kargath"};
 
         else if (level <= 60)
-            locNames = {"Bulwark", "Deadwind", "Flame Crest", "Lights", "Everlook", "Cenarion Hold"};
+            locNames = {"Bulwark", "Flame Crest", "Lights", "Everlook", "Cenarion Hold"};
     }
 
     for (const auto& name: locNames){
         for (const auto& node: m_travelNodes){
-            std::regex regex {name};
-            if (std::regex_search(node.name, regex) && !excludedNodes.count(node.id))
+            if (node.name.find(name) != std::string::npos && !excludedNodes.count(node.id))
                 result.push_back(node.id);
         }
     }
@@ -2805,7 +3455,7 @@ bool ChatHandler::HandleWorldBotAddCommand(char * args){
         }
 
         // Prevent setting a custom level for bots unless the account is a GM or skipping checks is enabled.
-        if (GetSession()->GetSecurity() > SEC_PLAYER || sWorld.getConfig(CONFIG_BOOL_PARTY_BOT_SKIP_CHECKS))
+        // if (GetSession()->GetSecurity() > SEC_PLAYER || sWorld.getConfig(CONFIG_BOOL_PARTY_BOT_SKIP_CHECKS))
             ExtractUInt32(&args, botLevel);
     }
 
@@ -2820,7 +3470,8 @@ bool ChatHandler::HandleWorldBotAddCommand(char * args){
     Team team;
     ExtractUInt32(&args, exTeam);
     if (exTeam)
-        team = HORDE;
+        // team = HORDE;
+        team = ALLIANCE;
     else
         team = pPlayer->GetTeam();
     uint8 botRace = SelectRandomRaceForClass(botClass, team/*pPlayer->GetTeam()*/);
@@ -2892,7 +3543,7 @@ bool ChatHandler::HandleWorldBotTradeEnchantCommand(char * args){
         return true;
     }
     else if (char* arg = ExtractArg(&args)){
-        std::vector<const SpellEntry*> spells = pAI->GetProfessionSpellsFilterByRegex(std::string(arg));
+        std::vector<const SpellEntry*> spells = pAI->GetProfessionSpellsByFilter(std::string(arg));
         std::string msg;
 
         uint32 lang = 0;
@@ -3046,7 +3697,7 @@ bool ChatHandler::HandleWorldBotSpawnCommand(char * args){
     if (minLevel > maxLevel){
         uint32 temp = minLevel;
         minLevel = maxLevel;
-        maxLevel = minLevel;
+        maxLevel = temp;
     }
 
     uint32 count = 0;
@@ -3056,6 +3707,7 @@ bool ChatHandler::HandleWorldBotSpawnCommand(char * args){
     uint32 hordeCount = 0;
     for (uint32 i=0; i < count; ++i){
         Team botTeam = PickRandomValue(ALLIANCE, HORDE);
+        // Team botTeam = HORDE;
         uint32 botLevel = urand(minLevel, maxLevel);
         std::vector<uint32> vec;
         bool isGanker = false;
@@ -3071,30 +3723,31 @@ bool ChatHandler::HandleWorldBotSpawnCommand(char * args){
             return false;
         }
         uint32 nodeId = SelectRandomContainerElement(vec);
+        // nodeId = 1032;
         const TravelNode& node = sPlayerBotMgr.GetTravelNode(nodeId);
         CombatBotRoles botRole = ROLE_INVALID;
         uint8 botClass = CLASS_WARRIOR;
         if (botTeam == ALLIANCE)
             botClass = PickRandomValue(CLASS_WARRIOR, CLASS_PALADIN, CLASS_HUNTER, CLASS_ROGUE, CLASS_DRUID, CLASS_MAGE, CLASS_WARLOCK, CLASS_PRIEST);
-            // botClass = PickRandomValue(CLASS_WARLOCK, CLASS_WARRIOR);
+            // botClass = CLASS_PRIEST;
         else if (botTeam == HORDE)
             botClass = PickRandomValue(CLASS_WARRIOR, CLASS_SHAMAN, CLASS_HUNTER, CLASS_ROGUE, CLASS_DRUID, CLASS_MAGE, CLASS_WARLOCK, CLASS_PRIEST);
-            // botClass = PickRandomValue(CLASS_WARLOCK, CLASS_WARRIOR);
+            // botClass = CLASS_DRUID;
         
-        if (botClass == CLASS_WARRIOR)
-            botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_TANK);
-        else if (botClass == CLASS_PALADIN)
-            botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_HEALER);
-        else if (botClass == CLASS_SHAMAN)
-            botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_RANGE_DPS /*, ROLE_HEALER */);
-        else if (botClass == CLASS_HUNTER || botClass == CLASS_MAGE || botClass == CLASS_WARLOCK)
-            botRole = ROLE_RANGE_DPS;
-        else if (botClass == CLASS_ROGUE)
-            botRole = ROLE_MELEE_DPS;
-        else if (botClass == CLASS_DRUID)
-            botRole = PickRandomValue(ROLE_RANGE_DPS, /*ROLE_HEALER,*/ ROLE_MELEE_DPS);
-        else if (botClass == CLASS_PRIEST)
-            botRole = PickRandomValue(ROLE_RANGE_DPS /*, ROLE_HEALER*/);
+        // if (botClass == CLASS_WARRIOR)
+        //     botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_TANK);
+        // else if (botClass == CLASS_PALADIN)
+        //     botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_HEALER);
+        // else if (botClass == CLASS_SHAMAN)
+        //     botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_RANGE_DPS /*, ROLE_HEALER */);
+        // else if (botClass == CLASS_HUNTER || botClass == CLASS_MAGE || botClass == CLASS_WARLOCK)
+        //     botRole = ROLE_RANGE_DPS;
+        // else if (botClass == CLASS_ROGUE)
+        //     botRole = ROLE_MELEE_DPS;
+        // else if (botClass == CLASS_DRUID)
+        //     botRole = PickRandomValue(ROLE_RANGE_DPS, /*ROLE_HEALER,*/ ROLE_MELEE_DPS);
+        // else if (botClass == CLASS_PRIEST)
+        //     botRole = PickRandomValue(ROLE_RANGE_DPS /*, ROLE_HEALER*/);
         
         uint8 botRace = SelectRandomRaceForClass(botClass, botTeam);
         WorldBotAI* pAI = new WorldBotAI(nullptr, nullptr, botRole, botRace, botClass, (uint8)botLevel, node.map_id, 0, node.x, node.y, node.z, frand(0.0f, 6.28f));
@@ -3118,81 +3771,20 @@ bool ChatHandler::HandleWorldBotSpawnCommand(char * args){
             hordeCount++;
         // else
         //     SendSysMessage("New world bot added.");
-        
-        // if (botRole == ROLE_HEALER){
-        //     botLevel = urand(minLevel, maxLevel);
-        //     botTeam = PickRandomValue(ALLIANCE, HORDE);
-        //     botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_RANGE_DPS, ROLE_TANK);
-
-        //     if (botRole == ROLE_MELEE_DPS){
-        //         std::vector<Classes> vec {CLASS_WARRIOR, CLASS_ROGUE, CLASS_DRUID};
-        //         if (botTeam == ALLIANCE)
-        //             vec.push_back(CLASS_PALADIN);
-        //         else
-        //             vec.push_back(CLASS_SHAMAN);
-
-        //         botClass = SelectRandomContainerElement(vec);
-        //     }
-        //     else if (botRole == ROLE_RANGE_DPS){
-        //         std::vector<Classes> vec {CLASS_WARLOCK, CLASS_MAGE, CLASS_PRIEST, CLASS_HUNTER, CLASS_DRUID};
-        //         if (botTeam == HORDE)
-        //             vec.push_back(CLASS_SHAMAN);
-
-        //         botClass = SelectRandomContainerElement(vec);
-        //     }
-        //     else if (botRole == ROLE_TANK){
-        //         botClass = CLASS_WARRIOR;
-        //     }
-
-        //     botRace = SelectRandomRaceForClass(botClass, botTeam);
-        //     float x, y, z;
-        //     pAI->me->GetNearPoint(pAI->me, x, y, z, 0, 5.0f, frand(0.0f, 6.28f));
-        //     PartyBotAI* ai = new PartyBotAI(pAI->me, nullptr, botRole, botRace, botClass, (uint8)botLevel, node.map_id, pAI->me->GetInstanceId(), x, y, z, frand(0.0f, 6.28f));
-        //     if (!sPlayerBotMgr.AddBot(ai)){
-        //         delete ai;
-        //         SendSysMessage("Error spawning bot.");
-        //         SetSentErrorMessage(true);
-        //         return false;
-        //     }
-        // }
-        // else if (urand(0, 100) <= 35){
-        //     botLevel = urand(minLevel, maxLevel);
-        //     botTeam = PickRandomValue(ALLIANCE, HORDE);
-        //     botRole = PickRandomValue(ROLE_MELEE_DPS, ROLE_RANGE_DPS, ROLE_TANK);
-
-        //     if (botRole == ROLE_MELEE_DPS){
-        //         std::vector<Classes> vec {CLASS_WARRIOR, CLASS_ROGUE, CLASS_DRUID};
-        //         if (botTeam == ALLIANCE)
-        //             vec.push_back(CLASS_PALADIN);
-        //         else
-        //             vec.push_back(CLASS_SHAMAN);
-
-        //         botClass = SelectRandomContainerElement(vec);
-        //     }
-        //     else if (botRole == ROLE_RANGE_DPS){
-        //         std::vector<Classes> vec {CLASS_WARLOCK, CLASS_MAGE, CLASS_PRIEST, CLASS_HUNTER, CLASS_DRUID};
-        //         if (botTeam == HORDE)
-        //             vec.push_back(CLASS_SHAMAN);
-
-        //         botClass = SelectRandomContainerElement(vec);
-        //     }
-        //     else if (botRole == ROLE_TANK){
-        //         botClass = CLASS_WARRIOR;
-        //     }
-
-        //     botRace = SelectRandomRaceForClass(botClass, botTeam);
-        //     float x, y, z;
-        //     pAI->me->GetNearPoint(pAI->me, x, y, z, 0, 5.0f, frand(0.0f, 6.28f));
-        //     PartyBotAI* ai = new PartyBotAI(pAI->me, nullptr, botRole, botRace, botClass, (uint8)botLevel, node.map_id, pAI->me->GetInstanceId(), x, y, z, frand(0.0f, 6.28f));
-        //     if (!sPlayerBotMgr.AddBot(ai)){
-        //         delete ai;
-        //         SendSysMessage("Error spawning bot.");
-        //         SetSentErrorMessage(true);
-        //         return false;
-        //     }
-        // }
     }
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Spawned %d alliances and %d hordes.", allianceCount, hordeCount);
 
     return true;
+}
+
+std::unordered_map<std::string, std::vector<std::pair<uint32, uint32>>> PlayerBotMgr::GetSpecsFilterBySubstring(std::string pattern){
+    std::unordered_map<std::string, std::vector<std::pair<uint32, uint32>>> specMap;
+
+    for (const auto entry: m_worldBotDefaultTalentSpecs){
+        if (entry.first.find(pattern) != std::string::npos){
+            specMap[entry.first] = entry.second;
+        }
+    }
+
+    return specMap;
 }

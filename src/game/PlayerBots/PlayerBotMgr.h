@@ -187,6 +187,9 @@ class PlayerBotMgr
         TaxiFlightNodeInfo GetTaxiFlightNodeInfoById(uint32 id) const;
         std::vector<TravelNodePath> GetTravelNodePath(uint32 node_id, uint32 to_node_id);
 
+        std::unordered_map<std::string /* spec name */, std::vector<std::pair<uint32, uint32>> /* talent sequence */> GetSpecsFilterBySubstring(std::string pattern);
+        inline float GetWorldBotGearQuality(){ return m_gearQuality; }
+
     protected:
         // How long since last update?
         uint32 m_elapsedTime;
@@ -215,6 +218,8 @@ class PlayerBotMgr
         std::vector<TaxiFlightNodeInfo> m_taxiFlightNodeInfo;
 
         ShortTimeTracker m_statsTimer;
+        float m_gearQuality = 0.5;
+        std::unordered_map<std::string, std::vector<std::pair<uint32, uint32>>> m_worldBotDefaultTalentSpecs;
 };
 
 #define sPlayerBotMgr MaNGOS::Singleton<PlayerBotMgr>::Instance()
