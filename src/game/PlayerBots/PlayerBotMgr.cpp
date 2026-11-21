@@ -143,6 +143,9 @@ void PlayerBotMgr::Load()
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr] Between %u and %u bots online", m_confMinRandomBots, m_confMaxRandomBots);
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr] %u now loading", m_stats.loadingCount);
     }
+
+    CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr] Curlcode res = %d.", res);
 }
 
 void PlayerBotMgr::DeleteAll()
@@ -162,6 +165,8 @@ void PlayerBotMgr::DeleteAll()
 
     if (m_confDebug)
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr] Deleting all bots [OK]");
+
+    curl_global_cleanup();
 }
 
 void PlayerBotMgr::OnBotLogin(PlayerBotEntry *e)

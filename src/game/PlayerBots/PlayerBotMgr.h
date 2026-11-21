@@ -10,6 +10,8 @@
 #include <vector>
 #include <memory>
 
+#include "curl/curl.h"
+
 class PlayerBotAI;
 class WorldSession;
 class Player;
