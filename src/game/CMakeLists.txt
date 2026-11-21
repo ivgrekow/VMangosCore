@@ -247,7 +247,6 @@ set (game_SRCS
     vmap/VMapFactory.cpp
     vmap/VMapManager2.cpp
     vmap/WorldModel.cpp
-    E:/VMangos-Server/VMangosCore/dep/windows/optional_dependencies/curl/include/curl
     AccountData.h
     AccountMgr.h
     AuraRemovalMgr.h
@@ -576,6 +575,7 @@ include_directories(
   ${CMAKE_SOURCE_DIR}/dep/include
   ${CMAKE_SOURCE_DIR}/src/framework
   ${CMAKE_SOURCE_DIR}/src/shared
+  ${CMAKE_SOURCE_DIR}/dep/windows/optional_dependencies/curl/include
   ${CMAKE_BINARY_DIR}
   ${CMAKE_BINARY_DIR}/src/shared
   ${MYSQL_INCLUDE_DIR}
@@ -583,9 +583,8 @@ include_directories(
   ${ZLIB_INCLUDE_DIRS}
 )
 
-# set(CURL_INCLUDE_DIR "E:/VMangos-Server/VMangosCore/src/game/curl")
+# set(CURL_INCLUDE_DIR "E:/VMangos-Server/VMangosCore/dep/windows/optional_dependencies/curl/include")
 set(CURL_LIBRARY "E:/VMangos-Server/VMangosCore/dep/windows/optional_dependencies/curl/lib/libcurl.lib")
-# Вместо find_package(CURL REQUIRED) используйте:
 add_library(CURL::libcurl UNKNOWN IMPORTED)
 set_target_properties(CURL::libcurl PROPERTIES
     IMPORTED_LOCATION "${CURL_LIBRARY}"

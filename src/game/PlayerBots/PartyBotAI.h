@@ -21,6 +21,8 @@
 #include "Group.h"
 #include "ObjectAccessor.h"
 
+#include "json.hpp"
+
 class PartyBotAI : public CombatBotBaseAI
 {
 public:
@@ -105,6 +107,8 @@ public:
     float m_z = 0.0f;
     float m_o = 0.0f;
     bool m_resetSpellData = false;
+
+    nlohmann::json m_whisperChat;
 };
 
 #endif

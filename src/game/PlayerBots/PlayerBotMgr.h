@@ -11,6 +11,7 @@
 #include <memory>
 
 #include "curl/curl.h"
+#include "json.hpp"
 
 class PlayerBotAI;
 class WorldSession;
@@ -109,6 +110,11 @@ class PlayerBotMgr
         uint32 GenBotAccountId() { return ++m_maxAccountId; }
         PlayerBotStats& GetStats(){ return m_stats; }
         void Start() { m_confEnableRandomBots = true; }
+
+        inline nlohmann::json GetRequestBody() { return m_requestBody; }
+        inline curl_slist* GetHTTPHeaders() { return m_headers; }
+        inline std::string GetApiKey() { return m_apiKey; }
+        inline std::string GetApiUrl() { return m_apiUrl; }
     protected:
         // How long since last update?
         uint32 m_elapsedTime;
@@ -130,6 +136,11 @@ class PlayerBotMgr
         bool m_confDebug;
         bool m_confEnableRandomBots;
         bool m_confBattleBotAutoJoin;
+
+        nlohmann::json m_requestBody;
+        std::string m_apiUrl = "https://api.deepseek.com/chat/completions";
+        std::string m_apiKey;
+        curl_slist* m_headers;
 };
 
 #define sPlayerBotMgr MaNGOS::Singleton<PlayerBotMgr>::Instance()

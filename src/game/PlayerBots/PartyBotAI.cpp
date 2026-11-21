@@ -45,6 +45,11 @@ enum PartyBotSpells
 #define PB_MIN_FOLLOW_ANGLE 0.0f
 #define PB_MAX_FOLLOW_ANGLE 6.0f
 
+static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
+}
+
 bool PartyBotAI::OnSessionLoaded(PlayerBotEntry* entry, WorldSession* sess)
 {
     if (!m_race && !m_class)
@@ -546,6 +551,95 @@ void PartyBotAI::OnPacketReceived(WorldPacket const* packet)
     //printf("Bot received %s\n", LookupOpcodeName(packet->GetOpcode()));
     switch (packet->GetOpcode())
     {
+        case SMSG_MESSAGECHAT:{
+            WorldPacket data(*packet);
+            uint8 type;
+            data >> type;
+            if (type != CHAT_MSG_WHISPER)
+                return;
+
+            uint32 language;
+            
+            data >> language;
+            if (language == LANG_ADDON)
+                return;
+            
+            ObjectGuid senderGuid;
+            data >> senderGuid;
+            if (senderGuid == me->GetObjectGuid())
+                return;
+
+            uint32 msgLen;
+            data >> msgLen;
+
+            std::string message;
+            data >> message;
+
+            auto answer = std::make_unique<WorldPackets::Chat::ChatMessage>();
+            if (me->GetTeam() == ALLIANCE)
+                answer->lang = LANG_COMMON;
+            else if (me->GetTeam() == HORDE)
+                answer->lang = LANG_ORCISH;
+            else
+                return;
+            answer->type = type;
+
+            Player* sender = sObjectAccessor.FindPlayer(senderGuid);
+            if (!sender)
+                return;
+
+            std::string senderName {sender->GetName()};
+            if (m_whisperChat.empty())
+                m_whisperChat = sPlayerBotMgr.GetRequestBody();
+            
+            answer->whisperTargetOrChannel = senderName;
+
+            m_whisperChat["messages"].push_back({{"role", "user"}, {"content", ("[" + senderName + "]: " + message).c_str()}});
+
+            CURL* handle = curl_easy_init();
+            if (!handle){
+                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Failed to curl_easy_init.");
+                return;
+            }
+            curl_easy_setopt(handle, CURLOPT_URL, sPlayerBotMgr.GetApiUrl().c_str());
+            curl_easy_setopt(handle, CURLOPT_HTTPHEADER, sPlayerBotMgr.GetHTTPHeaders());
+            std::string request_string = m_whisperChat.dump();
+            curl_easy_setopt(handle, CURLOPT_POSTFIELDS, request_string.c_str());
+            curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, WriteCallback);
+
+            std::string response_str;
+            curl_easy_setopt(handle, CURLOPT_WRITEDATA, &response_str);
+
+            CURLcode res = curl_easy_perform(handle);
+            if (res != CURLE_OK){
+                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, " %s", curl_easy_strerror(res));
+            }
+            else
+                sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "___ HTTP request succeed.");
+
+            long httpCode = 0;
+            curl_easy_getinfo(handle, CURLINFO_RESPONSE_CODE, &httpCode);
+            if (httpCode != 200) {
+                sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "HTTP %ld, body: %s", httpCode, response_str.c_str());
+            }
+
+            nlohmann::json response_json = nlohmann::json::parse(response_str);
+            response_str = response_json["choices"][0]["message"]["content"];
+            m_whisperChat["messages"].push_back({
+                {"role", "assistant"},
+                {"content", response_str.c_str()},
+                {"reasoning_content", response_json["choices"][0]["message"]["reasoning_content"]}
+            });
+            response_json = nlohmann::json::parse(response_str);
+            answer->message = response_json["message"];
+
+            me->GetSession()->QueuePacket(std::move(answer));
+
+            curl_easy_cleanup(handle);
+            std::string info = m_whisperChat.dump();
+            sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "\t\t %s\n\n", info.c_str());
+            return;
+        }
         case SMSG_LEARNED_SPELL:
         case SMSG_SUPERCEDED_SPELL:
         case SMSG_REMOVED_SPELL:

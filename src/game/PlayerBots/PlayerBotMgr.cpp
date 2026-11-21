@@ -41,11 +41,15 @@ PlayerBotMgr::PlayerBotMgr()
     m_lastBotsRefresh = 0;
     m_lastUpdate = 0;
     m_lastBattleBotQueueUpdate = 0;
+
+    CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr] Curlcode res = %d.", res);
 }
 
 PlayerBotMgr::~PlayerBotMgr()
 {
-
+    curl_slist_free_all(m_headers);
+    curl_global_cleanup();
 }
 
 void PlayerBotMgr::LoadConfig()
@@ -61,6 +65,36 @@ void PlayerBotMgr::LoadConfig()
 
     if (!sWorld.getConfig(CONFIG_BOOL_FORCE_LOGOUT_DELAY))
         m_tempBots.clear();
+
+    const char* env_p = std::getenv("VMANGOSWOW_APIKEY");
+    if (env_p == nullptr){
+        sLog.Out(LOG_BASIC, LOG_LVL_ERROR, "Error: Environment variable VMANGOSWOW_APIKEY is not set.");
+        return;
+    }
+    m_apiKey = env_p;
+
+    m_headers = nullptr;
+    m_headers = curl_slist_append(m_headers, ("Authorization: Bearer " + m_apiKey).c_str());
+    m_headers = curl_slist_append(m_headers, "Content-Type: application/json");
+
+    m_requestBody = {
+        {"model", "deepseek-flash"},
+        {"messages", nlohmann::json::array({
+            {{"role", "system"}, {"content", "Ты являешься ботом в игре World of Warcraft 1.12.1 (ядро VMangos), дворф воин 16 уровня. "
+                "Твоя задача - общаться с живым игроком на разные темы. Сообщение от игроков предваряется его именем в формате "
+                " \"[Имя_игрока]:\", чтобы можно было понять, кто обращается. Игрок может задавать вопросы связанные с локальным "
+                "контекстом игрового мира. Часто для ответа на такие вопросы требуется вызывать функции обращения к ядру. "
+                "Пока что таких функций нет. Поэтому, не додумывай информацию, которую не можешь запросить у ядра. "
+                "Старайся поддержать беседу, но если нужен запрос к ядру, то ответь игроку прямо, что не можешь "
+                "ответить на его вопрос или дать иную подсказку. Всегда возвращай только валидный JSON. "
+                "Пример: {\"message\": \"текст ответа\"}"}},
+            // {{"role", "user"}, {"content", "Привет. Как твоё ничего?"}}
+        })},
+        {"reasoning_effort", "high"},
+        {"stream", false},
+        {"response_format", nlohmann::json::array({"json_object"})},
+        {"max_tokens", 2000}
+    };
 }
 
 void PlayerBotMgr::Load()
@@ -143,9 +177,6 @@ void PlayerBotMgr::Load()
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr] Between %u and %u bots online", m_confMinRandomBots, m_confMaxRandomBots);
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr] %u now loading", m_stats.loadingCount);
     }
-
-    CURLcode res = curl_global_init(CURL_GLOBAL_DEFAULT);
-    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr] Curlcode res = %d.", res);
 }
 
 void PlayerBotMgr::DeleteAll()
@@ -165,8 +196,6 @@ void PlayerBotMgr::DeleteAll()
 
     if (m_confDebug)
         sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "[PlayerBotMgr] Deleting all bots [OK]");
-
-    curl_global_cleanup();
 }
 
 void PlayerBotMgr::OnBotLogin(PlayerBotEntry *e)

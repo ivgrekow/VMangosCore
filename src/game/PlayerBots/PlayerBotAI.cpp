@@ -143,6 +143,7 @@ bool PlayerBotAI::SpawnNewPlayer(WorldSession* sess, uint8 class_, uint32 race_,
     sObjectMgr.InsertPlayerInCache(newChar);
     sess->SetPlayer(newChar);
     sess->SetMasterPlayer(mPlayer);
+    sObjectAccessor.AddObject(mPlayer);
     sObjectAccessor.AddObject(newChar);
     newChar->SetCanModifyStats(true);
     newChar->UpdateAllStats();
